@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Local builds must not perform external vulnerability-feed I/O.
+         Run package vulnerability checks explicitly in CI. -->
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+</Project>

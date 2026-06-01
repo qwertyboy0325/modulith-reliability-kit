@@ -1,0 +1,72 @@
+# Reference source snapshots
+ref/
+
+# .NET build output
+bin/
+obj/
+artifacts/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+coverage*/
+*.nupkg
+*.snupkg
+
+# .NET local user files
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+launchSettings.local.json
+
+# IDEs and editors
+.vs/
+.vscode/
+.idea/
+**/.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+appsettings.*.Local.json
+secrets.json
+*.pem
+*.key
+*.pfx
+
+# Logs and runtime temp files
+*.log
+logs/
+tmp/
+temp/
+
+# Docker and local database volumes
+docker-data/
+postgres-data/
+pgdata/
+*.db
+*.sqlite
+*.sqlite3
+
+# Node/frontend artifacts, if a UI is added locally
+node_modules/
+dist/
+build/
+.next/
+coverage-final.json
+
+# Tool caches
+.cache/
+.pytest_cache/
+.dotnet/
