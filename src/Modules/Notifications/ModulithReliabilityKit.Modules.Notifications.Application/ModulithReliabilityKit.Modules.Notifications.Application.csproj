@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Catalog\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\ModulithReliabilityKit.BuildingBlocks.Application\ModulithReliabilityKit.BuildingBlocks.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+  </ItemGroup>
+</Project>

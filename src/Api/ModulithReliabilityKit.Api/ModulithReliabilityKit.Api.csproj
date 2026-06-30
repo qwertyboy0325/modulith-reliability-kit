@@ -2,6 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\BuildingBlocks\ModulithReliabilityKit.BuildingBlocks.Infrastructure\ModulithReliabilityKit.BuildingBlocks.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Modules\Catalog\ModulithReliabilityKit.Modules.Catalog.Infrastructure\ModulithReliabilityKit.Modules.Catalog.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\Modules\Notifications\ModulithReliabilityKit.Modules.Notifications.Infrastructure\ModulithReliabilityKit.Modules.Notifications.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

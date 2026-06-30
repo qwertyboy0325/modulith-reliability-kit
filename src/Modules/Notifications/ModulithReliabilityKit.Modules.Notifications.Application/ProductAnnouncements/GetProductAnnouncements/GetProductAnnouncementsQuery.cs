@@ -1,0 +1,5 @@
+using ModulithReliabilityKit.BuildingBlocks.Application.Queries;
+
+namespace ModulithReliabilityKit.Modules.Notifications.Application.ProductAnnouncements.GetProductAnnouncements;
+
+public sealed record GetProductAnnouncementsQuery : IQuery<IReadOnlyCollection<ProductAnnouncementDto>>;
