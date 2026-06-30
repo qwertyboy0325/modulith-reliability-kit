@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\ModulithReliabilityKit.Modules.Catalog.Domain\ModulithReliabilityKit.Modules.Catalog.Domain.csproj" />
+    <ProjectReference Include="..\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents.csproj" />
+    <ProjectReference Include="..\..\..\BuildingBlocks\ModulithReliabilityKit.BuildingBlocks.Application\ModulithReliabilityKit.BuildingBlocks.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+  </ItemGroup>
+</Project>

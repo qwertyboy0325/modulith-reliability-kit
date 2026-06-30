@@ -1,21 +1,21 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: modulith-postgres
+    container_name: modulith_reliability_kit-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: modulith
-      POSTGRES_USER: modulith
-      POSTGRES_PASSWORD: modulith
+      POSTGRES_DB: modulith_reliability_kit
+      POSTGRES_USER: modulith_reliability_kit
+      POSTGRES_PASSWORD: modulith_reliability_kit
     ports:
       - "5432:5432"
     volumes:
-      - modulith_pgdata:/var/lib/postgresql/data
+      - modulith_reliability_kit_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U modulith -d modulith"]
+      test: ["CMD-SHELL", "pg_isready -U modulith_reliability_kit -d modulith_reliability_kit"]
       interval: 5s
       timeout: 5s
       retries: 10
 
 volumes:
-  modulith_pgdata:
+  modulith_reliability_kit_pgdata:

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\BuildingBlocks\ModulithReliabilityKit.BuildingBlocks.Domain\ModulithReliabilityKit.BuildingBlocks.Domain.csproj" />
+  </ItemGroup>
+</Project>

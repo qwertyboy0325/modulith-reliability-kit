@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\..\..\BuildingBlocks\Modulith.BuildingBlocks.Application\Modulith.BuildingBlocks.Application.csproj" />
-  </ItemGroup>
-</Project>

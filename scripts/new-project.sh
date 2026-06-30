@@ -50,9 +50,9 @@ to_snake() {
 validate_identifier "$product_name" "product name"
 validate_identifier "$module_name" "module name"
 
-template_product="Modulith"
+template_product="ModulithReliabilityKit"
 template_module="Catalog"
-template_product_snake="modulith"
+template_product_snake="modulith_reliability_kit"
 template_module_snake="catalog"
 
 product_snake="$(to_snake "$product_name")"
