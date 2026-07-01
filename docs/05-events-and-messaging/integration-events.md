@@ -181,6 +181,8 @@ global ordering or exactly-once *timing*:
 ## What not to copy blindly
 
 - The **in-memory bus as the cross-module transport** if modules might ever run as separate processes.
+  (The kit ships an opt-in NATS JetStream transport behind the same `IEventsBus` for exactly this case —
+  `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs`, pinned by `NatsCrossProcessReliabilityTests`.)
 - **Path B (direct publish)** for anything other than explicitly droppable events.
 - An **inconsistent consumer model** (inbox vs direct). Pick one and apply it uniformly, or classify each
   event explicitly (see reliability matrix).

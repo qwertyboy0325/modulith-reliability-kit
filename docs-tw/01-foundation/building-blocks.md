@@ -128,11 +128,11 @@ src/BuildingBlocks/
 
 - **VERDICT：可抄。** 這是設計核心。優先**顯式** notification 對應（逐一註冊）勝過反射／容器掃描對應 —— 較易稽核且與容器無關。
 
-### Event Bus（記憶體內）
+### Event Bus（記憶體內預設 + 可選 NATS JetStream）
 
-綁定到 `IEventsBus` 的記憶體 event-bus 實作。**這是唯一傳輸。** 無持久 Broker 實作 `IEventsBus`。
+`IEventsBus` 之後有兩種實作。**預設**為記憶體 bus(單進程)。**可選**的 `NatsEventBus`(NATS JetStream)提供跨進程持久投遞:`Publish` 會等到伺服器 `PubAck` 才回傳(故 outbox 絕不會把未持久化的訊息標為 processed),並由耐久 consumer 做至少一次投遞(失敗重送,由冪等 inbox 去重)。以 `Messaging:Transport=Nats` 選用;傳輸保證由 `NatsCrossProcessReliabilityTests` 釘住。見 `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` 與 `NatsSubscriptionBackgroundService.cs`。
 
-- **VERDICT：作為預設／開發傳輸可以；勿當作可靠的跨模組投遞。** 持久性來自 **Outbox + Inbox 表**，不是 Bus。本套件的記憶體 Bus 預設**不**靜默吞掉 Publish 例外。
+- **VERDICT：記憶體版作為預設／開發傳輸可以;勿當作可靠的跨模組投遞。** 持久性優先來自 **Outbox + Inbox 表**;需要跨進程持久時,切換到 JetStream 傳輸。兩種 bus 皆不靜默吞掉 Publish 例外。
 
 ### Processing — `Processing/OutboxProcessorBase.cs`
 

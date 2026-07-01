@@ -17,5 +17,16 @@ services:
       timeout: 5s
       retries: 10
 
+  # Optional durable transport. Only needed when running the API with Messaging:Transport=Nats;
+  # the default in-memory transport requires no broker. JetStream is enabled with -js.
+  nats:
+    image: nats:2.10-alpine
+    container_name: modulith_reliability_kit-nats
+    restart: unless-stopped
+    command: ["-js"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
 volumes:
   modulith_reliability_kit_pgdata:

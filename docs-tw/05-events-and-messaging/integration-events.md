@@ -136,7 +136,7 @@ SELECT 到期列 id（status IN ('pending','retrying') 且 next_retry_on_utc 為
 
 ## 不建議盲目抄什麼
 
-- 若模組未來可能跑成獨立進程，勿把**記憶體 bus 當跨模組傳輸**。
+- 若模組未來可能跑成獨立進程，勿把**記憶體 bus 當跨模組傳輸**。(本 kit 已提供可選的 NATS JetStream 傳輸接在同一個 `IEventsBus` 之後,正是為此情境 —— `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs`,由 `NatsCrossProcessReliabilityTests` 釘住。)
 - **路徑 B（直接發佈）** 用於非明確可丟棄的事件。
 - **不一致的消費模型**（inbox vs 直連）。擇一並一致套用，或逐一明確分類每個事件（見可靠性矩陣）。
 

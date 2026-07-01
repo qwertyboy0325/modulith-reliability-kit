@@ -1,5 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="ModulithReliabilityKit.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ModulithReliabilityKit.BuildingBlocks.Application\ModulithReliabilityKit.BuildingBlocks.Application.csproj" />
     <ProjectReference Include="..\ModulithReliabilityKit.BuildingBlocks.Domain\ModulithReliabilityKit.BuildingBlocks.Domain.csproj" />
   </ItemGroup>
@@ -8,9 +12,11 @@
     <PackageReference Include="MediatR" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="NATS.Net" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Polly" />
   </ItemGroup>

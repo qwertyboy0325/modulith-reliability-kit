@@ -39,7 +39,9 @@ flowchart LR
 ```
 
 Each edge is a claim with a home in the code and a test that pins it — see the
-[verification map](#verify-the-claims-guarantee--code--test) below.
+[verification map](#verify-the-claims-guarantee--code--test) below. The bus is in-memory by default; an
+opt-in NATS JetStream transport makes the same publish→consume path durable across processes (same
+diagram, real broker).
 
 | Hop | Mechanism | Guarantee |
 | --- | --------- | --------- |
@@ -70,6 +72,7 @@ faith.
 | End-to-end: create ⇒ durable consume ⇒ **exactly one** announcement; redelivery absorbed idempotently | wiring in [`Program.cs`](src/Api/ModulithReliabilityKit.Api/Program.cs) | [`CrossModuleReliabilityE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs) (2 tests) |
 | Same story through the **HTTP surface** (create via API ⇒ read announcement via API) | API endpoints in `Program.cs` | [`CatalogToNotificationsHttpE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Http/CatalogToNotificationsHttpE2ETests.cs) |
 | Cross-module references allowed **only** via `IntegrationEvents`; layer direction | project boundaries | [`ArchitectureTests`](src/Tests/ModulithReliabilityKit.ArchitectureTests) |
+| **Durable, cross-process transport** (opt-in): publish is persisted before it counts as delivered; delivery is at-least-once across processes | [`NatsEventBus.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Events/NatsEventBus.cs) (NATS JetStream) | [`NatsCrossProcessReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Messaging/NatsCrossProcessReliabilityTests.cs) |
 
 **60-second tour** (if you only read three files): the model in
 [`reliability-matrix.md`](docs/05-events-and-messaging/reliability-matrix.md) → the hard part
@@ -90,6 +93,7 @@ This is an actively-built kit. Stated honestly so the code and the claims match:
 | Durable **inbox** consumer (idempotent ingest, retry, dead-letter) wired end-to-end | Implemented |
 | **Dead-letter recovery**: list + reprocess (requeue, apply-once) via Notifications facade & admin endpoints | Implemented |
 | **Multi-instance safe** inbox drain (`FOR UPDATE SKIP LOCKED` row claim) proven by a concurrent-processor test | Implemented |
+| Opt-in **durable cross-process transport** (NATS JetStream) behind the existing `IEventsBus`; in-memory remains the default | Implemented |
 | End-to-end durable consume across a **second module** | Implemented |
 | Reliability **integration tests on real PostgreSQL** (Testcontainers): idempotency, crash recovery, dead-letter, cross-module e2e | Implemented |
 | **HTTP-level e2e** (WebApplicationFactory): create product via API → durable consume → announcement readable via API | Implemented |

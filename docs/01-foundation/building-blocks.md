@@ -154,14 +154,19 @@ saves, inside an **explicit transaction**. **VERDICT: copy.**
 - **VERDICT: copy.** This is the heart of the design. Prefer **explicit** notification mapping (register each
   mapping) over reflection/container-scan mapping — it is easier to audit and container-agnostic.
 
-### Event bus (in-memory)
+### Event bus (in-memory default + opt-in NATS JetStream)
 
-An in-memory event-bus implementation bound to `IEventsBus`. **This is the only transport.** No durable
-broker implements `IEventsBus`.
+Two implementations sit behind `IEventsBus`. The **default** is an in-memory bus (single process). An
+**opt-in** `NatsEventBus` (NATS JetStream) provides durable, cross-process delivery: `Publish` awaits a
+server `PubAck` before returning (so the outbox never marks an unpersisted message processed), and a
+durable consumer delivers at-least-once (redelivering on failure, deduplicated by the idempotent inbox).
+Select it with `Messaging:Transport=Nats`; the transport guarantees are pinned by
+`NatsCrossProcessReliabilityTests`. See
+`BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` + `NatsSubscriptionBackgroundService.cs`.
 
-- **VERDICT: fine as a default/dev transport; do not treat it as durable cross-module delivery.** Durability
-  comes from the **outbox + inbox tables**, not the bus. This kit's in-memory bus does **not** silently
-  swallow publish exceptions by default.
+- **VERDICT: in-memory is fine as the default/dev transport; do not treat it as durable cross-module
+  delivery.** Durability comes from the **outbox + inbox tables** first; for cross-process durability, switch
+  to the JetStream transport. Neither bus silently swallows publish exceptions.
 
 ### Processing — `Processing/OutboxProcessorBase.cs`
 

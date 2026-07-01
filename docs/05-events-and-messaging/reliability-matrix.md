@@ -25,9 +25,12 @@ with a note on what is needed to resolve it.
 - **Inbox?** = does the consumer persist to an inbox (idempotent + retry/dead-letter) or go direct-to-MediatR?
 - **Risk** = net assessment.
 
-> Transport caveat applying to **every** row: `IEventsBus` is in-memory. A durable end-to-end path therefore
-> depends on the **publish-side outbox** *and* a **consumer-side inbox**. "Durable" refers to the
-> publish-side outbox write; delivery still needs an idempotent, retrying consumer to be durable end-to-end.
+> Transport caveat applying to **every** row: `IEventsBus` is in-memory **by default**. A durable end-to-end
+> path therefore depends on the **publish-side outbox** *and* a **consumer-side inbox**. "Durable" refers to
+> the publish-side outbox write; delivery still needs an idempotent, retrying consumer to be durable
+> end-to-end. An **opt-in NATS JetStream transport** (`NatsEventBus`) is available behind the same
+> `IEventsBus` for cross-process durability — see `01-foundation/building-blocks.md` and
+> `NatsCrossProcessReliabilityTests`.
 
 ## Matrix
 

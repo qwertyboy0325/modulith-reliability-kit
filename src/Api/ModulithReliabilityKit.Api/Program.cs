@@ -2,6 +2,7 @@ using MediatR;
 using ModulithReliabilityKit.Api.Modules;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.DependencyInjection;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.DomainEventsDispatching;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 using ModulithReliabilityKit.Modules.Catalog.Infrastructure.Configuration;
 using ModulithReliabilityKit.Modules.Notifications.Infrastructure.Configuration;
 using Serilog;
@@ -23,6 +24,13 @@ builder.Services.AddHealthChecks();
 // Each module owns its own DbContext, so persistence services are registered per module.
 builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(typeof(Program).Assembly));
 builder.Services.AddModulithReliabilityKitBuildingBlocks(includePersistenceServices: false);
+
+// Transport is in-memory by default; opt into the durable, cross-process JetStream bus via config.
+// The NATS registration is added last, so it overrides the in-memory default when selected.
+if (string.Equals(builder.Configuration["Messaging:Transport"], "Nats", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddNatsEventBus(options => builder.Configuration.GetSection("Messaging:Nats").Bind(options));
+}
 
 // Modules.
 builder.Services.AddCatalogModule(builder.Configuration.GetConnectionString("Catalog")!);

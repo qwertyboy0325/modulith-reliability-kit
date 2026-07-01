@@ -21,7 +21,7 @@
 - **Inbox？** = 消費是否經 Inbox（冪等 + 重試／死信）或直連 MediatR。
 - **風險** = 綜合評估。
 
-> **每一列都適用：** `IEventsBus` 為記憶體內。端到端持久路徑因此需要**發佈側 Outbox** *加上* **消費側 Inbox**。「持久」僅指發佈側 Outbox **寫入**；端到端持久仍需一個冪等、會重試的消費者。
+> **每一列都適用：** `IEventsBus` **預設**為記憶體內。端到端持久路徑因此需要**發佈側 Outbox** *加上* **消費側 Inbox**。「持久」僅指發佈側 Outbox **寫入**；端到端持久仍需一個冪等、會重試的消費者。另有**可選的 NATS JetStream 傳輸**(`NatsEventBus`)接在同一個 `IEventsBus` 之後,提供跨進程持久 —— 見 `01-foundation/building-blocks.md` 與 `NatsCrossProcessReliabilityTests`。
 
 ## 矩陣
 

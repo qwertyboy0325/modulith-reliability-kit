@@ -124,6 +124,27 @@ dotnet test src/Tests/ModulithReliabilityKit.IntegrationTests/ModulithReliabilit
   --filter "FullyQualifiedName~InboxConcurrencyReliabilityTests"
 ```
 
+## Part 3 — Optional: the durable, cross-process transport (NATS JetStream)
+
+**Talking point:** the default bus is in-memory (single process). The kit also ships an **opt-in**
+JetStream-backed transport so the same outbox/inbox guarantees hold **across processes** — a publish is
+persisted against a `PubAck` before it is considered delivered, and delivery is at-least-once via a
+durable consumer.
+
+```bash
+# NATS (JetStream) is included in the compose file; bring everything up:
+docker compose -f docker-compose.postgres.yml up -d
+
+# Run the API on the NATS transport instead of in-memory:
+Messaging__Transport=Nats \
+  dotnet run --project src/Api/ModulithReliabilityKit.Api/ModulithReliabilityKit.Api.csproj --urls http://localhost:5099
+```
+
+The transport guarantees are pinned against a real NATS server by
+`NatsCrossProcessReliabilityTests` (a message published while no subscriber is running is still
+delivered once one starts; a failed handler is redelivered). Implementation:
+`BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` + `NatsSubscriptionBackgroundService.cs`.
+
 ## Suggested 3-minute recording script
 
 1. **(20s) Framing.** "Modular monolith, DDD. The thesis: durable publish is not durable delivery.
