@@ -153,6 +153,10 @@ both instances drain the shared outbox (at-least-once *publish*, possibly duplic
 at-least-once *delivery*, and both instances drain the shared inbox concurrently. Two independent
 duplication sources, collapsed to one effect by the **idempotent inbox** + **`FOR UPDATE SKIP LOCKED`**.
 
+> One command: **`./scripts/demo.sh up`** does everything below (compose up → clean slate → build → two
+> staggered instances → seed → print the invariant) and leaves them running; **`./scripts/demo.sh down`**
+> stops them. The manual steps follow, for narrating on camera.
+
 ```bash
 # 0. Shared infra (Postgres + NATS/JetStream) up.
 docker compose -f docker-compose.postgres.yml up -d

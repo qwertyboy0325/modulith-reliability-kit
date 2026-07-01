@@ -51,6 +51,9 @@ logs/
 tmp/
 temp/
 
+# demo.sh runtime state (instance logs + pids)
+.demo/
+
 # Docker and local database volumes
 docker-data/
 postgres-data/
