@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <!-- White-box reliability integration tests drive the internal inbox processor/writer directly. -->
+    <InternalsVisibleTo Include="ModulithReliabilityKit.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ModulithReliabilityKit.Modules.Notifications.Application\ModulithReliabilityKit.Modules.Notifications.Application.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\ModulithReliabilityKit.BuildingBlocks.Infrastructure\ModulithReliabilityKit.BuildingBlocks.Infrastructure.csproj" />
   </ItemGroup>

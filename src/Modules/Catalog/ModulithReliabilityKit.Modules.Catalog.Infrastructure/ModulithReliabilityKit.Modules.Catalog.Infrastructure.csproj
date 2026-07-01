@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <!-- White-box reliability integration tests drive the internal outbox processor directly. -->
+    <InternalsVisibleTo Include="ModulithReliabilityKit.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ModulithReliabilityKit.Modules.Catalog.Domain\ModulithReliabilityKit.Modules.Catalog.Domain.csproj" />
     <ProjectReference Include="..\ModulithReliabilityKit.Modules.Catalog.Application\ModulithReliabilityKit.Modules.Catalog.Application.csproj" />
     <ProjectReference Include="..\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents\ModulithReliabilityKit.Modules.Catalog.IntegrationEvents.csproj" />
