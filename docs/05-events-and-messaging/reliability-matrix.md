@@ -66,10 +66,13 @@ generic "Module A / Module B" placeholders) that show the risk classes a real ma
    subscription that lives somewhere not yet inspected — resolve it before shipping.
 5. **Dead-letter is a holding state, not a grave.** A message that exhausts its retries is parked, not lost —
    the payload and last error are preserved. Once the downstream cause is fixed, an operator requeues it and
-   the normal (idempotent) inbox drain applies it **exactly once**; the dead-letter is marked resolved in the
-   same transaction, so a message is never simultaneously dead-lettered and pending. Recovery loop:
+   the normal (idempotent) inbox drain applies its **local effect exactly once**; the requeue and the
+   dead-letter resolution are staged on one `DbContext` and committed by a single `SaveChanges`, so a
+   message is never simultaneously dead-lettered and pending. Recovery loop:
    `InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`, pinned by
-   `InboxDeadLetterReprocessTests`.
+   `InboxDeadLetterReprocessTests`. **Scope:** reprocess is proven idempotent for *sequential* re-runs
+   (already-resolved → no-op); *concurrent* operator reprocess of the same dead-letter is not currently
+   guarded — the final effect still lands once via the inbox claim, but the resolution bookkeeping can race.
 
 ## What evidence is missing (to resolve `Unknown`)
 

@@ -48,7 +48,7 @@
 2. **路徑 B 本質可丟。** 直接發佈無 Outbox；若在提交 DB 寫入*之後*才觸發，系統可能到達「DB 已變、無人被通知、無記錄」的狀態。
 3. **完整持久模式** 是 Outbox 發佈 → Inbox 消費 + 重試／死信。此套件即 `ProductCreatedIntegrationEvent`（Catalog → Notifications）。它是參考；任何較弱的做法都必須是有意識的選擇。
 4. **Unknown 列是真缺口。** 發佈但未見訂閱者的事件，不是死重量就是訂閱藏在尚未檢視之處 —— 上線前解決它。
-5. **死信是暫存狀態,不是墳墓。** 用盡重試的訊息是被「停放」而非遺失 —— payload 與最後錯誤都保留。下游原因修好後,由操作者重新排入,正常(冪等)的 Inbox 排空會**恰好套用一次**;死信在同一交易內標記為已解決,因此訊息不會同時處於死信與待處理兩種狀態。恢復迴圈:`InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`,由 `InboxDeadLetterReprocessTests` 釘住。
+5. **死信是暫存狀態,不是墳墓。** 用盡重試的訊息是被「停放」而非遺失 —— payload 與最後錯誤都保留。下游原因修好後,由操作者重新排入,正常(冪等)的 Inbox 排空會把其**本地效果恰好套用一次**;重新排入與死信解析是在同一個 `DbContext` 暫存、由單次 `SaveChanges` 提交,因此訊息不會同時處於死信與待處理兩種狀態。恢復迴圈:`InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`,由 `InboxDeadLetterReprocessTests` 釘住。**範圍:** reprocess 只證明對*循序*重跑冪等(已解析 → no-op);對同一死信的*併發*操作者 reprocess 目前未加保護 —— 最終效果仍透過 inbox claim 只套用一次,但解析的簿記可能競態。
 
 ## 補齊 Unknown 所需證據
 

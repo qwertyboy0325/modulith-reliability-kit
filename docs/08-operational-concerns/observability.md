@@ -27,7 +27,7 @@ the processors). A single `ReliabilityMetrics` singleton is shared by every proc
 | `messaging.outbox.published` | counter | outbox rows published to the bus (tag: `module`) |
 | `messaging.outbox.publish_failures` | counter | outbox publish attempts that threw |
 | `messaging.outbox.process.duration` | histogram (ms) | time to publish one outbox message |
-| `messaging.inbox.processed` | counter | inbox messages applied exactly once |
+| `messaging.inbox.processed` | counter | inbox messages whose local effect + `processed` mark committed (exactly-once *local* apply) |
 | `messaging.inbox.retried` | counter | inbox messages scheduled for retry after a failure |
 | `messaging.inbox.dead_lettered` | counter | inbox messages moved to the dead-letter table |
 | `messaging.inbox.process.duration` | histogram (ms) | time to apply one inbox message |
@@ -36,7 +36,9 @@ the processors). A single `ReliabilityMetrics` singleton is shared by every proc
 | `messaging.transport.redelivered` | counter | transport deliveries nacked for redelivery |
 
 Spans (`ActivitySource` = `ModulithReliabilityKit.Reliability`): `outbox.publish`, `inbox.process`,
-`nats.publish`, `nats.consume`. Failures set the span status to error.
+`nats.publish`, `nats.consume`. Failures set the span status to error. These are **per-process** spans:
+trace context is **not** propagated through NATS headers, so a publish span and its downstream consume
+span are not yet correlated into one distributed trace (see open questions).
 
 The **API host** wires OpenTelemetry: metrics (the custom meter + ASP.NET Core + runtime) are exported on
 a Prometheus scraping endpoint at `GET /metrics`; traces are exported via OTLP **only when**

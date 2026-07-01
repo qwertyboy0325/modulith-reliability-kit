@@ -12,8 +12,11 @@ namespace ModulithReliabilityKit.IntegrationTests.Catalog;
 /// <summary>
 /// Publisher-side reliability of the Catalog outbox against a real PostgreSQL instance.
 /// A committed-but-unpublished outbox row models a crash between the business transaction and the
-/// bus hop; on the next process lifetime the production <see cref="CatalogOutboxProcessor"/> must
-/// republish it exactly once and mark it processed so it never re-publishes in steady state.
+/// bus hop; on the next process lifetime the production <see cref="CatalogOutboxProcessor"/> publishes
+/// it on the next drain and marks it processed, so a processed row is not re-published in steady state.
+/// This does NOT make publishing exactly-once: a crash *after* publish but *before* the mark yields a
+/// duplicate publish by design (at-least-once), which the idempotent inbox absorbs — see
+/// CrossModuleReliabilityE2ETests.Outbox_Redelivery_Is_Absorbed_Idempotently_By_The_Inbox.
 /// </summary>
 [Collection(CatalogDatabaseCollection.Name)]
 public sealed class CatalogOutboxReliabilityTests
@@ -28,7 +31,7 @@ public sealed class CatalogOutboxReliabilityTests
     }
 
     [Fact]
-    public async Task Unpublished_Outbox_Row_Is_Republished_Exactly_Once_After_Restart()
+    public async Task Committed_Unpublished_Outbox_Row_Is_Published_Then_Marked()
     {
         await _fixture.ResetAsync();
         var @event = NewEvent();

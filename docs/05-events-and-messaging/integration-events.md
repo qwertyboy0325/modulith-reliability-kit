@@ -112,6 +112,11 @@ A consumer can handle a received integration event in two ways:
   unique-violation (`23505`) — so re-delivery never produces a second row. A separate inbox processor then
   drains the inbox with retry + dead-letter. See `Notifications.Infrastructure/Inbox/InboxWriter.cs` and
   `Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs`.
+  **Idempotency contract:** the key is `(logical_id, occurred_on_utc)`, both taken from the producer's
+  `IntegrationEvent`. This provides *event/transport* idempotency (not business idempotency) and assumes
+  that key is **stable across redeliveries** and the payload is **immutable per key** — a differing payload
+  under the same key is silently treated as a duplicate. If a producer can re-timestamp a retry (a fresh
+  `occurred_on_utc`), it would create a second row and a second effect; key on a stable message id instead.
 - **Direct-to-MediatR** (the risky path): publish straight to the module's mediator on receive, with no
   inbox, no retry, no dead-letter. **Do not use this for events that matter** — a swallowed handler
   exception silently loses the event.
@@ -169,7 +174,7 @@ global ordering or exactly-once *timing*:
 | Notification handler → `IEventsBus.Publish` | in-memory bus | In-process; exceptions surface (not swallowed) |
 | `IEventsBus` → subscriber (inbox writer) | unique index `(logical_id, occurred_on_utc)` + swallow `23505` | Idempotent ingest → durable |
 | `IEventsBus` → subscriber (direct) | mediator publish | **Best-effort, droppable** |
-| Inbox row → handler | drain + retry + dead-letter; per-row `FOR UPDATE SKIP LOCKED` claim | At-least-once with dead-letter; **multi-instance safe** (exactly-once apply) |
+| Inbox row → handler | drain + retry + dead-letter; per-row `FOR UPDATE SKIP LOCKED` claim | At-least-once with dead-letter; **multi-instance safe** (exactly-once *local* apply; external side effects out of scope) |
 | Direct publish (Path B) | `IEventsBus.Publish` only | **Best-effort, droppable, no record** |
 
 ## What to copy
@@ -183,6 +188,10 @@ global ordering or exactly-once *timing*:
 - The **in-memory bus as the cross-module transport** if modules might ever run as separate processes.
   (The kit ships an opt-in NATS JetStream transport behind the same `IEventsBus` for exactly this case —
   `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs`, pinned by `NatsCrossProcessReliabilityTests`.)
+  Note its topology: it binds **one durable consumer per event type** (`{DurablePrefix}-{EventType}`),
+  giving competing-consumer (queue-group) semantics across instances of one deployment. Independent
+  consumer groups (true pub/sub fan-out across modules) would need a per-consumer durable identity and are
+  **not** implemented — consumer-group identity is part of your deployment topology.
 - **Path B (direct publish)** for anything other than explicitly droppable events.
 - An **inconsistent consumer model** (inbox vs direct). Pick one and apply it uniformly, or classify each
   event explicitly (see reliability matrix).

@@ -13,6 +13,10 @@ thesis the kit demonstrates, one layer down at the storage/write path. It carrie
 identifiers**; scale figures are rounded, representative magnitudes (see the de-identification note in the
 [README](../../README.md#scope-provenance-and-ai-assisted-authorship)).
 
+> The figures below are **reconstructed, representative magnitudes** from de-identified production
+> experience — not an exported dataset or an independently auditable incident report. They illustrate the
+> engineering shape and the reasoning, not a reproducible benchmark.
+
 ## Context (the shape of the workload)
 
 - A continuous stream of device telemetry: each device reports position/status every few seconds.

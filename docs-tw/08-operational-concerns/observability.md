@@ -23,7 +23,7 @@
 | `messaging.outbox.published` | counter | 發佈到 bus 的 outbox 列(tag:`module`) |
 | `messaging.outbox.publish_failures` | counter | 拋例外的 outbox 發佈嘗試 |
 | `messaging.outbox.process.duration` | histogram (ms) | 發佈一筆 outbox 訊息耗時 |
-| `messaging.inbox.processed` | counter | 恰好一次套用的 inbox 訊息 |
+| `messaging.inbox.processed` | counter | 本地效果 + `processed` 標記已提交的 inbox 訊息(恰好一次*本地*套用) |
 | `messaging.inbox.retried` | counter | 失敗後排入重試的 inbox 訊息 |
 | `messaging.inbox.dead_lettered` | counter | 移入死信表的 inbox 訊息 |
 | `messaging.inbox.process.duration` | histogram (ms) | 套用一筆 inbox 訊息耗時 |
@@ -31,7 +31,7 @@
 | `messaging.transport.published` | counter | 在持久(NATS)傳輸上發佈的事件 |
 | `messaging.transport.redelivered` | counter | 被 nak 而重送的傳輸投遞 |
 
-Span(`ActivitySource` = `ModulithReliabilityKit.Reliability`):`outbox.publish`、`inbox.process`、`nats.publish`、`nats.consume`;失敗會把 span 狀態設為 error。
+Span(`ActivitySource` = `ModulithReliabilityKit.Reliability`):`outbox.publish`、`inbox.process`、`nats.publish`、`nats.consume`;失敗會把 span 狀態設為 error。這些是**逐進程**的 span:trace context **不會**透過 NATS header 傳播,因此發佈端的 span 與下游消費端的 span 尚未關聯成同一條分散式 trace(見待釐清問題)。
 
 **API host** 接上 OpenTelemetry:指標(自訂 meter + ASP.NET Core + runtime)由 Prometheus scraping 端點 `GET /metrics` 匯出;traces 只有在設定 `Observability:OtlpEndpoint` 時才經 OTLP 匯出(否則 span 仍記錄但不外送,預設執行不需要 collector)。
 

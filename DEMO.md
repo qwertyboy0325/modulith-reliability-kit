@@ -86,7 +86,10 @@ failure, so its full lifecycle is demonstrated by the test in Part 2 (§ dead-le
 ## Part 2 — The hard guarantees, proven by tests (~2–3 min)
 
 **Talking point:** the interesting reliability properties are failure paths. They are pinned against a
-**real PostgreSQL** (Testcontainers), so they are checkable, not asserted in prose.
+**real PostgreSQL** (Testcontainers), so they are checkable, not asserted in prose. Note the fault
+model: failures are injected as **transaction rollbacks** (a throwing handler) and **pre-publish
+states** (a committed-but-unpublished row) — not OS-level process kills. See the README
+[Guarantee boundaries & non-goals](README.md#guarantee-boundaries--non-goals).
 
 ### Fast checks (no Docker): boundaries + retry policy
 
@@ -108,9 +111,9 @@ Narrate what the key tests prove (all against real PostgreSQL):
 
 | Test | Guarantee demonstrated |
 | ---- | ---------------------- |
-| `CatalogOutboxReliabilityTests.Unpublished_Outbox_Row_Is_Republished_Exactly_Once_After_Restart` | Outbox survives a crash and re-publishes exactly once |
+| `CatalogOutboxReliabilityTests.Committed_Unpublished_Outbox_Row_Is_Published_Then_Marked` | A committed-but-unpublished row is published once on the next drain and marked; a processed row is not re-published (publish-then-crash duplicates are absorbed by the inbox — `CrossModuleReliabilityE2ETests.Outbox_Redelivery_Is_Absorbed_Idempotently_By_The_Inbox`) |
 | `NotificationsInboxReliabilityTests.Duplicate_Delivery_Produces_Exactly_One_Inbox_Row_And_One_Effect` | At-least-once delivery is absorbed idempotently |
-| `NotificationsInboxReliabilityTests.Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` | Crash mid-apply rolls back, then recovers exactly once |
+| `NotificationsInboxReliabilityTests.Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` | A failed apply (handler throw → rollback) leaves no effect, then recovers exactly once (local effect) |
 | `NotificationsInboxReliabilityTests.Repeated_Failures_Dead_Letter_The_Message_After_Max_Attempts` | A poison message is dead-lettered, not silently lost |
 | `InboxDeadLetterReprocessTests` | Dead-letter **recovery**: requeue → apply exactly once → resolve atomically; re-runs are no-ops |
 | `InboxConcurrencyReliabilityTests` | **Multi-instance safe**: `FOR UPDATE SKIP LOCKED` claim ⇒ a concurrent drainer skips a claimed row (no double effect, no spurious failure) |
@@ -145,7 +148,7 @@ The transport guarantees are pinned against a real NATS server by
 delivered once one starts; a failed handler is redelivered). Implementation:
 `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` + `NatsSubscriptionBackgroundService.cs`.
 
-### Two instances → exactly-once (SKIP LOCKED + JetStream, the capstone)
+### Two instances → exactly-once local apply (SKIP LOCKED + JetStream, the capstone)
 
 **Talking point:** this is the whole thesis in one shot. Run **two** API instances against the **same**
 NATS and the **same** PostgreSQL. Every product still yields **exactly one** announcement — even though

@@ -11,8 +11,9 @@ from real modular-monolith systems — grounded in source, not slideware.
 
 **Start here** — pick your fast path:
 
-- **See it work** → [`DEMO.md`](DEMO.md). One command (`./scripts/demo.sh up`) runs the capstone: the
-  *same* message processed **exactly once** across two API processes on one NATS + one PostgreSQL.
+- **See it work** → [`DEMO.md`](DEMO.md). One command (`./scripts/demo.sh up`) runs the capstone: each
+  message yields **exactly one committed effect** across two API processes on one NATS + one PostgreSQL
+  (at-least-once delivery, collapsed by the idempotent inbox).
 - **Check the work, don't trust it** → the [guarantee → code → test map](#verify-the-claims-guarantee--code--test).
   Every reliability claim links to where it is enforced *and* the test that pins it.
 - **Get the idea in 60 seconds** → [the reliability model](#the-reliability-model-core-idea):
@@ -22,9 +23,11 @@ from real modular-monolith systems — grounded in source, not slideware.
 
 - **Reliability judgment for distributed-ish systems.** The central thesis — *durable publish is not
   durable delivery* — is worked out end to end: transactional outbox, idempotent inbox, retry, and
-  dead-letter, with every integration event classified by its real delivery guarantee. The guarantees
-  are pinned by integration tests against a real PostgreSQL (crash recovery, exactly-once, idempotent
-  redelivery, dead-letter) — not just asserted in prose.
+  dead-letter, with every integration event classified by its real delivery guarantee. The named
+  guarantees are pinned by integration tests against a real PostgreSQL under a documented fault model
+  (rollback + committed-but-unpublished crash): at-least-once publish, **exactly-once local apply**,
+  idempotent redelivery, retry → dead-letter → recovery. See
+  [Guarantee boundaries & non-goals](#guarantee-boundaries--non-goals) for what is *not* covered.
 - **Reverse-engineering and design extraction.** Two real-world modular-monolith codebases were read
   bottom-up and distilled into a copyable rule set. See
   [`docs/09-lessons-learned/architecture-rules-for-my-own-project.md`](docs/09-lessons-learned/architecture-rules-for-my-own-project.md).
@@ -41,7 +44,7 @@ flowchart LR
   A[Aggregate change] -->|one EF txn · atomic| O[(outbox)]
   O -->|drain · mark-after-publish · at-least-once| BUS{{IEventsBus · in-memory}}
   BUS -->|idempotent ingest · unique index| IN[(inbox)]
-  IN -->|SKIP LOCKED claim · exactly-once apply| FX([announcement effect])
+  IN -->|SKIP LOCKED claim · exactly-once local apply| FX([announcement effect])
   FX -.->|failure · retry w/ backoff| IN
   IN -.->|max attempts| DL[(dead-letter)]
   DL -.->|operator reprocess| IN
@@ -72,23 +75,66 @@ faith.
 | Guarantee | Enforced in | Pinned by test |
 | --------- | ----------- | -------------- |
 | Aggregate change + outbox row commit **atomically** (one transaction) | [`UnitOfWorkBehavior.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Pipeline/UnitOfWorkBehavior.cs) | [`CatalogProductWriteReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Catalog/CatalogProductWriteReliabilityTests.cs) · `Creating_A_Product_Commits_The_Aggregate_And_Outbox_Row_Together` |
-| Outbox publish is **at-least-once**; an unpublished row is re-published **exactly once** after a crash | [`CatalogOutboxProcessor.cs`](src/Modules/Catalog/ModulithReliabilityKit.Modules.Catalog.Infrastructure/Processing/CatalogOutboxProcessor.cs) · [`OutboxProcessorBase.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Processing/OutboxProcessorBase.cs) | [`CatalogOutboxReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Catalog/CatalogOutboxReliabilityTests.cs) · `Unpublished_Outbox_Row_Is_Republished_Exactly_Once_After_Restart` |
+| Outbox publish is **at-least-once**: a committed-but-unpublished row is published on the next drain and marked processed; a processed row is not re-published. (A crash *after* publish but *before* the mark yields a duplicate publish **by design**, absorbed by the inbox.) | [`CatalogOutboxProcessor.cs`](src/Modules/Catalog/ModulithReliabilityKit.Modules.Catalog.Infrastructure/Processing/CatalogOutboxProcessor.cs) · [`OutboxProcessorBase.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Processing/OutboxProcessorBase.cs) | [`CatalogOutboxReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Catalog/CatalogOutboxReliabilityTests.cs) · `Committed_Unpublished_Outbox_Row_Is_Published_Then_Marked` · duplicate tolerance: [`CrossModuleReliabilityE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs) · `Outbox_Redelivery_Is_Absorbed_Idempotently_By_The_Inbox` |
 | Inbox ingest is **idempotent** (duplicate delivery ⇒ one row, one effect) | [`InboxWriter.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Inbox/InboxWriter.cs) | [`NotificationsInboxReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/NotificationsInboxReliabilityTests.cs) · `Duplicate_Delivery_Produces_Exactly_One_Inbox_Row_And_One_Effect` |
-| Inbox apply is **transactional exactly-once**; a crash mid-apply rolls back and recovers | [`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs) | `NotificationsInboxReliabilityTests` · `Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` |
-| Inbox apply is **multi-instance safe**: concurrent drainers claim rows with `FOR UPDATE SKIP LOCKED`, so a message is applied exactly once (no double effect, no spurious failure) | [`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs) | [`InboxConcurrencyReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/InboxConcurrencyReliabilityTests.cs) · `A_Row_Claimed_By_One_Processor_Is_Skipped_By_A_Concurrent_Processor` |
+| Inbox apply commits the **local DB effect + `processed` mark in one transaction (exactly-once *local* apply)**; a failed apply rolls back and recovers. *External* side effects are out of scope — the shipped dispatcher only writes to the same database. | [`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs) | `NotificationsInboxReliabilityTests` · `Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` (failure injected as a handler throw → rollback) |
+| Inbox apply is **multi-instance safe**: concurrent drainers claim rows with `FOR UPDATE SKIP LOCKED`, so a message's local effect is applied exactly once (no double effect, no spurious failure). *Multi-instance safety is on the consumer side; the outbox has no publisher claim and may publish a row from multiple instances — see the boundaries below.* | [`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs) | [`InboxConcurrencyReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/InboxConcurrencyReliabilityTests.cs) · `A_Row_Claimed_By_One_Processor_Is_Skipped_By_A_Concurrent_Processor` |
 | **Retry** with back-off, then **dead-letter** after max attempts | [`InboxRetryPolicy.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Application/Inbox/InboxRetryPolicy.cs) | [`InboxRetryPolicyTests`](src/Tests/ModulithReliabilityKit.ReliabilityTests/Inbox/InboxRetryPolicyTests.cs) (unit) · `NotificationsInboxReliabilityTests.Repeated_Failures_Dead_Letter_The_Message_After_Max_Attempts` |
 | **Dead-letter recovery**: a poisoned message can be requeued and applied **exactly once**; the dead-letter is marked resolved atomically; re-runs are no-ops | [`InboxDeadLetterReprocessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Inbox/InboxDeadLetterReprocessor.cs) | [`InboxDeadLetterReprocessTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/InboxDeadLetterReprocessTests.cs) · `Reprocessing_A_Dead_Letter_Requeues_It_And_Applies_The_Effect_Exactly_Once` |
 | End-to-end: create ⇒ durable consume ⇒ **exactly one** announcement; redelivery absorbed idempotently | wiring in [`Program.cs`](src/Api/ModulithReliabilityKit.Api/Program.cs) | [`CrossModuleReliabilityE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs) (2 tests) |
 | Same story through the **HTTP surface** (create via API ⇒ read announcement via API) | API endpoints in `Program.cs` | [`CatalogToNotificationsHttpE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Http/CatalogToNotificationsHttpE2ETests.cs) |
 | Cross-module references allowed **only** via `IntegrationEvents`; layer direction | project boundaries | [`ArchitectureTests`](src/Tests/ModulithReliabilityKit.ArchitectureTests) |
-| **Durable, cross-process transport** (opt-in): publish is persisted before it counts as delivered; delivery is at-least-once across processes | [`NatsEventBus.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Events/NatsEventBus.cs) (NATS JetStream) | [`NatsCrossProcessReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Messaging/NatsCrossProcessReliabilityTests.cs) |
-| **Observability**: inbox outcomes (processed / retried / dead-lettered) are emitted as metrics from the real drain path, scrapeable at `/metrics` | [`ReliabilityMetrics.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Diagnostics/ReliabilityMetrics.cs) | [`ReliabilityMetricsInstrumentationTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/ReliabilityMetricsInstrumentationTests.cs) |
+| **Durable, cross-process transport** (opt-in): `Publish` awaits a JetStream `PubAck` (the broker accepted the message into the stream under its configured retention/storage) before the outbox marks the row; delivery to a durable consumer is at-least-once across processes. *Broker replication, retention sizing, storage exhaustion, and stream/consumer lifecycle are out of scope.* | [`NatsEventBus.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Events/NatsEventBus.cs) (NATS JetStream) | [`NatsCrossProcessReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Messaging/NatsCrossProcessReliabilityTests.cs) (publish-before-subscriber delivered once a subscriber starts; failed handler → redelivery) |
+| **Observability**: inbox outcomes (processed / retried / dead-lettered) are emitted as metrics from the real drain path, scrapeable at `/metrics`; spans are **per-process** (no cross-process trace propagation) | [`ReliabilityMetrics.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Diagnostics/ReliabilityMetrics.cs) | [`ReliabilityMetricsInstrumentationTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/ReliabilityMetricsInstrumentationTests.cs) |
 
 **60-second tour** (if you only read three files): the model in
 [`reliability-matrix.md`](docs/05-events-and-messaging/reliability-matrix.md) → the hard part
 ([`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs):
-transactional exactly-once + retry + dead-letter) → the guarantees proven end-to-end
+exactly-once *local* apply + retry + dead-letter) → the guarantees exercised end-to-end
 ([`CrossModuleReliabilityE2ETests.cs`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs)).
+
+## Guarantee boundaries & non-goals
+
+This kit is deliberate about *what it proves* and *under which fault model*. The claims above are pinned
+by integration tests against a real PostgreSQL and a real NATS server at a **single-node, ≤2-instance**
+topology; they are not a proof of production operation at scale.
+
+**What is guaranteed (and tested):**
+
+- **Transactional outbox write** — the aggregate change and the outbox row commit in one transaction.
+- **At-least-once publish** — the outbox is `publish → mark`; a crash between them re-publishes (a
+  duplicate by design), absorbed downstream. There is **no outbox lease/claim**, so multiple instances
+  may publish the same row; correctness relies on the idempotent inbox, not on deduplicated publishing.
+- **Idempotent inbox ingest** — dedup on `(logical_id, occurred_on_utc)`. This assumes that key is
+  **stable across redeliveries** and the payload is **immutable per key** (it is *event/transport*
+  idempotency, not business idempotency). A differing payload under the same key is treated as a
+  duplicate.
+- **Exactly-once *local database* apply** — the inbox dispatcher effect and the `processed` mark commit
+  in one transaction, so the local effect lands once under duplicate delivery and concurrent drainers
+  (`FOR UPDATE SKIP LOCKED`). **External side effects (HTTP / webhook / email / payment) are not
+  covered** — the shipped dispatcher only writes to the same database.
+- **Bounded retry → dead-letter → operator reprocess** on the inbox. Reprocess is idempotent for
+  **sequential** re-runs; **concurrent** reprocess of the same dead-letter is not currently guarded (the
+  final effect still lands once via the inbox claim, but the resolution bookkeeping can race).
+- **Durable cross-process transport (opt-in, NATS JetStream)** — `Publish` awaits a `PubAck` (the broker
+  accepted the message into a stream under its configured retention/storage); delivery to a durable
+  consumer is at-least-once, and lost acks cause redelivery, collapsed to one local effect by the inbox.
+
+**Fault model of the tests.** Failures are injected as **transaction rollbacks** (a throwing handler)
+and **pre-publish states** (a committed-but-unpublished row), plus real NATS redelivery. They do **not**
+include OS-level process kills, connection loss mid-commit, or broker failure.
+
+**Explicit non-goals (operator / adopter responsibility):**
+
+- Outbox retry backoff, outbox dead-letter, and poison-message quarantine — a permanently
+  unserializable outbox row is retried every polling interval indefinitely.
+- Global / end-to-end message ordering; backpressure, backlog, and throughput control; JetStream
+  ack-deadline tuning.
+- Broker replication, retention sizing, storage-exhaustion handling, stream/consumer lifecycle,
+  broker-side dedup (`Nats-Msg-Id`), and multi-region failover.
+- Generic cross-module pub/sub fan-out: the NATS transport binds **one durable consumer per event type**
+  (competing-consumer semantics across instances of one deployment), not independent consumer groups.
+- Cross-process (distributed) trace-context propagation — only per-process spans are emitted.
 
 ## Implementation status
 
@@ -129,10 +175,11 @@ Only each module's `IntegrationEvents` project is a public cross-module contract
 ## Run it
 
 Prefer a guided tour? [`DEMO.md`](DEMO.md) is a ~5-minute runnable walkthrough (live durable path +
-the failure-path guarantees proven by tests), including a **two-instance capstone** — the same message
-processed exactly once across two API processes on one NATS + one PostgreSQL (JetStream at-least-once +
-`FOR UPDATE SKIP LOCKED`) — with a recording script. Reliability metrics are scrapeable
-at `GET /metrics` (Prometheus); see [`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
+the failure-path guarantees exercised by tests), including a **two-instance capstone** — each message
+yields exactly one committed effect across two API processes on one NATS + one PostgreSQL (at-least-once
+delivery via JetStream, collapsed by the idempotent inbox + `FOR UPDATE SKIP LOCKED`) — with a recording
+script. Reliability metrics are scrapeable at `GET /metrics` (Prometheus); see
+[`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
 
 ```bash
 dotnet build src/ModulithReliabilityKit.sln
@@ -246,8 +293,9 @@ To set clear expectations for anyone evaluating this repository:
   substantial AI assistance — drafting, refactoring, distillation, and de-identification. The
   architectural judgment, the reliability thesis, the design trade-offs, and the production experience
   behind them are the author's; the AI was a tool for turning that into a clean, tested, and verifiable
-  artifact. Every claim here is backed by the code and tests it links to, so it can be checked directly
-  rather than taken on trust.
+  artifact. The **named** claims here are backed by the linked code and focused tests under a documented
+  fault model (see [Guarantee boundaries & non-goals](#guarantee-boundaries--non-goals)), so they can be
+  checked directly rather than taken on trust.
 
 ## Renaming / reuse
 

@@ -13,13 +13,17 @@ namespace ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 /// A durable, cross-process <see cref="IEventsBus"/> backed by NATS JetStream.
 /// </summary>
 /// <remarks>
-/// Chosen over Core NATS deliberately: the reliability story requires that a publish is not reported
-/// as delivered until the message is <b>persisted</b>. With JetStream, <see cref="Publish{T}"/> awaits a
-/// server <c>PubAck</c> before returning, so the outbox only marks a row processed once the message is
-/// durably stored — a subscriber being offline never loses it. Delivery to a subscriber is at-least-once
-/// via a durable consumer (see <see cref="NatsSubscriptionBackgroundService"/>), which the idempotent
-/// inbox deduplicates. This bus therefore preserves the same guarantees as the in-process default while
-/// making them hold across separate processes.
+/// Chosen over Core NATS deliberately: the reliability story requires that a publish is not reported as
+/// delivered until the broker has <b>accepted it into a stream</b>. With JetStream,
+/// <see cref="Publish{T}"/> awaits a server <c>PubAck</c> before returning, so the outbox only marks a row
+/// processed once the broker has persisted the message under its configured retention/storage — so a
+/// message published while no subscriber is running is still delivered once one starts. Delivery to a
+/// subscriber is <b>at-least-once</b> via a durable consumer (see
+/// <see cref="NatsSubscriptionBackgroundService"/>); lost acks cause redelivery, which the idempotent
+/// inbox collapses to one local effect. Unlike the in-process default (no durability at all), this bus
+/// makes the publish durable across separate processes. Broker replication, retention sizing,
+/// storage exhaustion, stream/consumer lifecycle, and broker-side dedup (<c>Nats-Msg-Id</c>, not set
+/// here) are out of scope — correctness relies on the consumer-side inbox, not on the broker deduplicating.
 /// </remarks>
 public sealed class NatsEventBus : IEventsBus
 {
@@ -105,7 +109,8 @@ public sealed class NatsEventBus : IEventsBus
         };
 
         // Awaiting the PubAck is the whole point: the outbox marks the row processed only after this
-        // returns, so a message can never be "published" without being durably stored.
+        // returns, so a row is never marked published until the broker has accepted the message into the
+        // stream (under its configured retention/storage). Delivery from there is still at-least-once.
         var ack = await _jetStream.PublishAsync(subject, json, headers: headers, cancellationToken: cancellationToken);
         ack.EnsureSuccess();
 
