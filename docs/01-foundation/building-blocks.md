@@ -169,8 +169,10 @@ A reusable base for outbox draining (fetch a batch of unprocessed rows, publish 
 row — mark-after-publish) that concrete module processors extend. Inbox processing follows the same
 batched shape with retry + dead-letter.
 
-- **VERDICT: copy.** Small, reusable across modules. A single background drainer runs today; adding
-  `FOR UPDATE SKIP LOCKED` to the fetch is the hardening step if multiple drainers ever run concurrently.
+- **VERDICT: copy.** Small, reusable across modules. The inbox processor already claims each row with
+  `FOR UPDATE SKIP LOCKED`, so multiple inbox drainers are safe (exactly-once apply). The outbox base is
+  at-least-once by design; adding `SKIP LOCKED` to its fetch is a duplicate-reduction optimization, not a
+  correctness fix, since the idempotent inbox absorbs the duplicates.
 
 ### Other infrastructure
 

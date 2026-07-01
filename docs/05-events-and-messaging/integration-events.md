@@ -59,8 +59,10 @@ to the same `DbContext`, so the outbox row is written **atomically** with the ag
 `Catalog.Infrastructure/Processing/CatalogOutboxProcessor.cs` (extending the shared
 `OutboxProcessorBase`) fetches a batch of unprocessed rows (`WHERE processed_on_utc IS NULL ORDER BY id
 LIMIT 50`) via EF Core, publishes each on the in-memory bus, then marks the row processed. Because the
-mark happens **after** publish, delivery is at-least-once. (A single background drainer runs today; a
-multi-drainer deployment would add `FOR UPDATE SKIP LOCKED` to the fetch to stay concurrency-safe.)
+mark happens **after** publish, delivery is at-least-once **by design** — running two drainers would just
+publish some rows twice, which the idempotent inbox absorbs. (Adding `FOR UPDATE SKIP LOCKED` to the outbox
+fetch is a duplicate-reduction optimization, not a correctness fix; multi-instance *correctness* is enforced
+on the consumer side — see the inbox claim below.)
 
 ### Step 3 — the notification handler calls the bus
 
@@ -117,13 +119,21 @@ A consumer can handle a received integration event in two ways:
 The inbox processor is the mature piece:
 
 ```text
-SELECT due rows (status IN ('pending','retrying') AND next_retry_on_utc IS NULL/≤ now),
+SELECT due row ids (status IN ('pending','retrying') AND next_retry_on_utc IS NULL/≤ now),
        ORDER BY occurred_on_utc, LIMIT 50
-  → for each row, in its OWN transaction:
+  → for each id, in its OWN transaction:
+        → claim the row: SELECT ... WHERE id = ? AND processed_on_utc IS NULL FOR UPDATE SKIP LOCKED
+              → no row (already processed, or locked by another instance): commit and move on
         → dispatch to the module's handler
         → on success: mark processed + commit (business effect and mark commit together)
         → on failure: roll back, then record retry per InboxRetryPolicy; after N attempts → dead-letter
 ```
+
+The per-row claim uses `FOR UPDATE SKIP LOCKED`, so running more than one API instance is safe: a second
+drainer skips a row already claimed by the first instead of double-dispatching it (which would double-apply
+the effect and record a spurious failure). See
+`Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs`, pinned by
+`InboxConcurrencyReliabilityTests`.
 
 Retry/backoff is defined in `BuildingBlocks.Application/Inbox/InboxRetryPolicy.cs`; exhausted messages move
 to a dead-letter record with a resolution workflow.
@@ -159,7 +169,7 @@ global ordering or exactly-once *timing*:
 | Notification handler → `IEventsBus.Publish` | in-memory bus | In-process; exceptions surface (not swallowed) |
 | `IEventsBus` → subscriber (inbox writer) | unique index `(logical_id, occurred_on_utc)` + swallow `23505` | Idempotent ingest → durable |
 | `IEventsBus` → subscriber (direct) | mediator publish | **Best-effort, droppable** |
-| Inbox row → handler | drain + retry + dead-letter | At-least-once with dead-letter |
+| Inbox row → handler | drain + retry + dead-letter; per-row `FOR UPDATE SKIP LOCKED` claim | At-least-once with dead-letter; **multi-instance safe** (exactly-once apply) |
 | Direct publish (Path B) | `IEventsBus.Publish` only | **Best-effort, droppable, no record** |
 
 ## What to copy

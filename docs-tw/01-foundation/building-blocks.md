@@ -136,7 +136,7 @@ src/BuildingBlocks/
 
 ### Processing — `Processing/OutboxProcessorBase.cs`
 
-可重用的 outbox drain 基底（取一批未處理列、逐一發佈、逐列在發佈後標記 processed），供各模組具體處理器擴充。Inbox 處理採相同批次形狀並加上重試 + dead-letter。目前僅單一背景 drainer;若未來多 drainer 併發,再於 fetch 加 `FOR UPDATE SKIP LOCKED` 作為強化。
+可重用的 outbox drain 基底（取一批未處理列、逐一發佈、逐列在發佈後標記 processed），供各模組具體處理器擴充。Inbox 處理採相同批次形狀並加上重試 + dead-letter。inbox 處理器已對每列以 `FOR UPDATE SKIP LOCKED` claim,故多個 inbox drainer 併發是安全的(恰好套用一次)。outbox 基底則刻意維持至少一次;在其 fetch 加 `SKIP LOCKED` 只是減少重複的優化,而非正確性修正,因重複會被冪等 inbox 吸收。
 
 - **VERDICT：可抄。** 併發安全且跨模組可重用。
 
