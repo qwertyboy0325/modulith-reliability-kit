@@ -114,14 +114,14 @@ Adjustments vs. the originally proposed structure:
 | Dependency Injection     | Draft  | Single MS.DI container with typed per-module persistence documented                          |
 | Unit of Work             | Draft  | Explicit-transaction UoW; dispatch-events-then-SaveChanges documented                        |
 | Integration events       | Draft  | Outbox publish vs direct publish paths; in-memory bus only                                   |
-| Reliability matrix       | Draft  | Per-event classification template; best-effort vs durable decision recorded                 |
+| Reliability matrix       | Draft  | Per-event classification template; best-effort vs durable decision recorded; dead-letter recovery + multi-instance (`SKIP LOCKED`) findings added |
 | Lessons learned / rules  | Draft  | Personal rule set extracted; critical                                                        |
 | Skeleton implementation  | Draft | `src/ModulithReliabilityKit` skeleton + Catalog/Notifications modules; typed module persistence + PostgreSQL demo/migration runbook added |
 | Domain model             | Not started | Next pass (entities, VOs, domain-event dispatching depth)                              |
 | Persistence (EF/Dapper)  | Not started | Next pass (per-module DbContext, migrations, Dapper-vs-EF split)                       |
 | Background processing    | Not started | Next pass (outbox/inbox scheduling, internal commands depth)                          |
 | Module architecture      | Draft | Catalog sample module plus public modular-monolith comparison; facade + typed persistence priorities implemented |
-| Operational concerns     | Not started | Next pass (logging, retry/dead-letter, observability)                                 |
+| Operational concerns     | Partial | Retry/dead-letter, dead-letter recovery, and multi-instance safety are documented in `05-events-and-messaging`; a dedicated doc covering observability (metrics/tracing) remains a next pass |
 
 ---
 
