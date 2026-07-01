@@ -73,6 +73,7 @@ faith.
 | Same story through the **HTTP surface** (create via API ⇒ read announcement via API) | API endpoints in `Program.cs` | [`CatalogToNotificationsHttpE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Http/CatalogToNotificationsHttpE2ETests.cs) |
 | Cross-module references allowed **only** via `IntegrationEvents`; layer direction | project boundaries | [`ArchitectureTests`](src/Tests/ModulithReliabilityKit.ArchitectureTests) |
 | **Durable, cross-process transport** (opt-in): publish is persisted before it counts as delivered; delivery is at-least-once across processes | [`NatsEventBus.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Events/NatsEventBus.cs) (NATS JetStream) | [`NatsCrossProcessReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Messaging/NatsCrossProcessReliabilityTests.cs) |
+| **Observability**: inbox outcomes (processed / retried / dead-lettered) are emitted as metrics from the real drain path, scrapeable at `/metrics` | [`ReliabilityMetrics.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Diagnostics/ReliabilityMetrics.cs) | [`ReliabilityMetricsInstrumentationTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/ReliabilityMetricsInstrumentationTests.cs) |
 
 **60-second tour** (if you only read three files): the model in
 [`reliability-matrix.md`](docs/05-events-and-messaging/reliability-matrix.md) → the hard part
@@ -94,6 +95,7 @@ This is an actively-built kit. Stated honestly so the code and the claims match:
 | **Dead-letter recovery**: list + reprocess (requeue, apply-once) via Notifications facade & admin endpoints | Implemented |
 | **Multi-instance safe** inbox drain (`FOR UPDATE SKIP LOCKED` row claim) proven by a concurrent-processor test | Implemented |
 | Opt-in **durable cross-process transport** (NATS JetStream) behind the existing `IEventsBus`; in-memory remains the default | Implemented |
+| **Observability**: reliability metrics (publish/processed/retried/dead-lettered/reprocessed/redelivered) on Prometheus `/metrics` + spans; traces via opt-in OTLP | Implemented |
 | End-to-end durable consume across a **second module** | Implemented |
 | Reliability **integration tests on real PostgreSQL** (Testcontainers): idempotency, crash recovery, dead-letter, cross-module e2e | Implemented |
 | **HTTP-level e2e** (WebApplicationFactory): create product via API → durable consume → announcement readable via API | Implemented |
@@ -118,7 +120,8 @@ Only each module's `IntegrationEvents` project is a public cross-module contract
 ## Run it
 
 Prefer a guided tour? [`DEMO.md`](DEMO.md) is a ~5-minute runnable walkthrough (live durable path +
-the failure-path guarantees proven by tests), with a recording script.
+the failure-path guarantees proven by tests), with a recording script. Reliability metrics are scrapeable
+at `GET /metrics` (Prometheus); see [`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
 
 ```bash
 dotnet build src/ModulithReliabilityKit.sln

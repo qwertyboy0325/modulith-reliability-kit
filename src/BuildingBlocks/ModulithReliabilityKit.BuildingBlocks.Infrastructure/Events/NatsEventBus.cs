@@ -1,9 +1,11 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
 using ModulithReliabilityKit.BuildingBlocks.Application.Events;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 
 namespace ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 
@@ -23,8 +25,11 @@ public sealed class NatsEventBus : IEventsBus
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private const string TransportName = "nats";
+
     private readonly NatsEventBusOptions _options;
     private readonly ILogger<NatsEventBus> _logger;
+    private readonly ReliabilityMetrics _metrics;
     private readonly NatsConnection _connection;
     private readonly INatsJSContext _jetStream;
 
@@ -34,15 +39,18 @@ public sealed class NatsEventBus : IEventsBus
     private readonly SemaphoreSlim _streamGate = new(1, 1);
     private volatile bool _streamReady;
 
-    public NatsEventBus(NatsEventBusOptions options, ILogger<NatsEventBus> logger)
+    public NatsEventBus(NatsEventBusOptions options, ReliabilityMetrics metrics, ILogger<NatsEventBus> logger)
     {
         _options = options;
+        _metrics = metrics;
         _logger = logger;
         _connection = new NatsConnection(new NatsOpts { Url = options.Url });
         _jetStream = new NatsJSContext(_connection);
     }
 
     internal NatsEventBusOptions Options => _options;
+
+    internal ReliabilityMetrics Metrics => _metrics;
 
     internal INatsJSContext JetStream => _jetStream;
 
@@ -85,6 +93,11 @@ public sealed class NatsEventBus : IEventsBus
         await EnsureStreamAsync(cancellationToken);
 
         var subject = $"{_options.SubjectPrefix}.{typeof(TIntegrationEvent).Name}";
+
+        using var activity = ReliabilityInstrumentation.ActivitySource.StartActivity("nats.publish");
+        activity?.SetTag("messaging.system", TransportName);
+        activity?.SetTag("messaging.destination", subject);
+
         var json = JsonSerializer.Serialize(@event, JsonOptions);
         var headers = new NatsHeaders
         {
@@ -95,6 +108,8 @@ public sealed class NatsEventBus : IEventsBus
         // returns, so a message can never be "published" without being durably stored.
         var ack = await _jetStream.PublishAsync(subject, json, headers: headers, cancellationToken: cancellationToken);
         ack.EnsureSuccess();
+
+        _metrics.TransportPublished(TransportName);
     }
 
     /// <summary>

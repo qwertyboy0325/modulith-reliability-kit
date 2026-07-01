@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModulithReliabilityKit.BuildingBlocks.Application.Inbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.Modules.Catalog.IntegrationEvents;
 using ModulithReliabilityKit.Modules.Notifications.Application.Inbox;
 using ModulithReliabilityKit.Modules.Notifications.Application.ProductAnnouncements;
@@ -141,7 +142,7 @@ public sealed class NotificationsInboxReliabilityTests : IClassFixture<Notificat
         => new ProductCreatedInboxDispatcher(new ProductAnnouncementStore(context));
 
     private static NotificationsInboxProcessor BuildProcessor(NotificationsContext context, IInboxDispatcher dispatcher)
-        => new(context, dispatcher, ImmediatePolicy, NullLogger<NotificationsInboxProcessor>.Instance);
+        => new(context, dispatcher, ImmediatePolicy, new ReliabilityMetrics(), NullLogger<NotificationsInboxProcessor>.Instance);
 
     private async Task<int> CountInboxAsync(Guid logicalId)
     {

@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ModulithReliabilityKit.BuildingBlocks.Application.Inbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.Modules.Notifications.Application.Inbox;
 
 namespace ModulithReliabilityKit.Modules.Notifications.Infrastructure.Processing;
@@ -24,20 +26,25 @@ internal sealed class NotificationsInboxProcessor
     // MemoryExtensions.Contains overload, which breaks EF Core's parameter evaluation on some SDKs.
     private static readonly List<string> PendingStatuses = ["pending", "retrying"];
 
+    private const string ModuleName = "notifications";
+
     private readonly NotificationsContext _context;
     private readonly IInboxDispatcher _dispatcher;
     private readonly InboxRetryPolicy _retryPolicy;
+    private readonly ReliabilityMetrics _metrics;
     private readonly ILogger<NotificationsInboxProcessor> _logger;
 
     public NotificationsInboxProcessor(
         NotificationsContext context,
         IInboxDispatcher dispatcher,
         InboxRetryPolicy retryPolicy,
+        ReliabilityMetrics metrics,
         ILogger<NotificationsInboxProcessor> logger)
     {
         _context = context;
         _dispatcher = dispatcher;
         _retryPolicy = retryPolicy;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -61,6 +68,22 @@ internal sealed class NotificationsInboxProcessor
     }
 
     private async Task ProcessOneAsync(long id, CancellationToken cancellationToken)
+    {
+        using var activity = ReliabilityInstrumentation.ActivitySource.StartActivity("inbox.process");
+        activity?.SetTag("module", ModuleName);
+
+        var startedAt = Stopwatch.GetTimestamp();
+        try
+        {
+            await ProcessOneCoreAsync(id, activity, cancellationToken);
+        }
+        finally
+        {
+            _metrics.RecordInboxProcessDuration(Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds, ModuleName);
+        }
+    }
+
+    private async Task ProcessOneCoreAsync(long id, Activity? activity, CancellationToken cancellationToken)
     {
         Exception failure;
 
@@ -100,11 +123,13 @@ internal sealed class NotificationsInboxProcessor
 
                 await _context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
+                _metrics.InboxProcessed(ModuleName);
                 return;
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 failure = ex;
             }
         }
@@ -145,6 +170,8 @@ internal sealed class NotificationsInboxProcessor
                 message.RetryCount,
                 error));
 
+            _metrics.InboxDeadLettered(ModuleName);
+
             _logger.LogError(
                 failure,
                 "Inbox message {InboxMessageId} ({LogicalId}) dead-lettered after {RetryCount} attempts",
@@ -156,6 +183,8 @@ internal sealed class NotificationsInboxProcessor
         {
             message.Status = "retrying";
             message.NextRetryOnUtc = DateTime.UtcNow + decision.RetryDelay;
+
+            _metrics.InboxRetried(ModuleName);
 
             _logger.LogWarning(
                 failure,

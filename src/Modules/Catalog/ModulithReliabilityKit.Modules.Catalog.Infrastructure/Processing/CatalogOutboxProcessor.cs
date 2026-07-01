@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using ModulithReliabilityKit.BuildingBlocks.Application.Events;
 using ModulithReliabilityKit.BuildingBlocks.Application.Outbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Processing;
 using ModulithReliabilityKit.Modules.Catalog.IntegrationEvents;
 
@@ -28,8 +29,12 @@ internal sealed class CatalogOutboxProcessor : OutboxProcessorBase
     private readonly CatalogContext _context;
     private readonly IEventsBus _eventsBus;
 
-    public CatalogOutboxProcessor(CatalogContext context, IEventsBus eventsBus, ILogger<CatalogOutboxProcessor> logger)
-        : base(logger)
+    public CatalogOutboxProcessor(
+        CatalogContext context,
+        IEventsBus eventsBus,
+        ReliabilityMetrics metrics,
+        ILogger<CatalogOutboxProcessor> logger)
+        : base(logger, metrics, moduleName: "catalog")
     {
         _context = context;
         _eventsBus = eventsBus;

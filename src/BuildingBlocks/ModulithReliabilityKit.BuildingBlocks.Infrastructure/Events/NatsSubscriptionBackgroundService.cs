@@ -2,6 +2,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 
 namespace ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 
@@ -54,6 +55,10 @@ internal sealed class NatsSubscriptionBackgroundService : BackgroundService
 
         await foreach (var message in consumer.ConsumeAsync<string>(cancellationToken: stoppingToken))
         {
+            using var activity = ReliabilityInstrumentation.ActivitySource.StartActivity("nats.consume");
+            activity?.SetTag("messaging.system", "nats");
+            activity?.SetTag("messaging.destination", subscription.Subject);
+
             try
             {
                 await subscription.Handle(message.Data!, stoppingToken);
@@ -65,6 +70,9 @@ internal sealed class NatsSubscriptionBackgroundService : BackgroundService
             }
             catch (Exception ex)
             {
+                activity?.SetStatus(System.Diagnostics.ActivityStatusCode.Error, ex.Message);
+                _bus.Metrics.TransportRedelivered("nats");
+
                 _logger.LogError(
                     ex,
                     "Handling NATS message on {Subject} failed; nacking for redelivery",

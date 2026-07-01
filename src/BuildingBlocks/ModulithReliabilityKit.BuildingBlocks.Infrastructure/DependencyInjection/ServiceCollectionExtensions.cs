@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModulithReliabilityKit.BuildingBlocks.Application;
 using ModulithReliabilityKit.BuildingBlocks.Application.Events;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.DomainEventsDispatching;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.ExecutionContext;
@@ -55,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IExecutionContextAccessor, NullExecutionContextAccessor>();
         services.TryAddSingleton<IEventsBus, InMemoryEventBus>();
         services.TryAddSingleton<IDomainNotificationsMapper, DomainNotificationsMapper>();
+        services.TryAddSingleton<ReliabilityMetrics>();
 
         // Cross-cutting MediatR pipeline. Additive on purpose: order = registration order.
         services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));

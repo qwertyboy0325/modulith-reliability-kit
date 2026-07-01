@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModulithReliabilityKit.BuildingBlocks.Application.Outbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.Modules.Catalog.Infrastructure;
 using ModulithReliabilityKit.Modules.Catalog.Infrastructure.Processing;
 using ModulithReliabilityKit.Modules.Catalog.IntegrationEvents;
@@ -77,7 +78,7 @@ public sealed class CatalogOutboxReliabilityTests
     private async Task DrainAsync(CapturingEventBus bus)
     {
         await using var context = _fixture.CreateContext();
-        var processor = new CatalogOutboxProcessor(context, bus, NullLogger<CatalogOutboxProcessor>.Instance);
+        var processor = new CatalogOutboxProcessor(context, bus, new ReliabilityMetrics(), NullLogger<CatalogOutboxProcessor>.Instance);
         await processor.ProcessAsync();
     }
 }

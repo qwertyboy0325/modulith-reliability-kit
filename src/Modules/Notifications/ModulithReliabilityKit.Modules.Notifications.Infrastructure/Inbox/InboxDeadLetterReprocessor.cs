@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using ModulithReliabilityKit.BuildingBlocks.Application.Inbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.Modules.Notifications.Application.Inbox;
 
 namespace ModulithReliabilityKit.Modules.Notifications.Infrastructure.Inbox;
@@ -15,11 +16,15 @@ internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
     private const string ResolvedByReprocess = "reprocessed";
     private const string ResolvedAlreadyApplied = "resolved";
 
-    private readonly NotificationsContext _context;
+    private const string ModuleName = "notifications";
 
-    public InboxDeadLetterReprocessor(NotificationsContext context)
+    private readonly NotificationsContext _context;
+    private readonly ReliabilityMetrics _metrics;
+
+    public InboxDeadLetterReprocessor(NotificationsContext context, ReliabilityMetrics metrics)
     {
         _context = context;
+        _metrics = metrics;
     }
 
     public async Task<ReprocessDeadLetterResult> ReprocessAsync(
@@ -80,6 +85,8 @@ internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
         Resolve(deadLetter, requestedBy, ResolvedByReprocess, "Requeued for reprocessing.");
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        _metrics.DeadLetterReprocessed(ModuleName);
 
         return new ReprocessDeadLetterResult(
             ReprocessDeadLetterOutcome.Requeued,

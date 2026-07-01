@@ -69,13 +69,15 @@ docs-tw/
   02-application-pipeline/
   05-events-and-messaging/
   07-module-architecture/
+  08-operational-concerns/
+    observability.md
   09-lessons-learned/
   10-skeleton/
 ```
 
 調整說明（與英文版相同）：
 
-- 未建立 `03`～`08` 空殼，避免寫未對程式查證的內容。
+- 未建立 `03`～`06` 空殼，避免寫未對程式查證的內容；`08-operational-concerns/observability.md` 已建立（指標 + 追蹤）。
 - `solution-structure` / `composition-root` 併入 `dependency-injection.md`（組合根與 DI 策略一起讀較清楚）。
 
 ## 6. 文件狀態
@@ -95,7 +97,7 @@ docs-tw/
 | 持久化（EF/Dapper） | 未開始 | 下一輪 |
 | 背景處理 | 未開始 | 下一輪 |
 | 模組架構 | 草稿 | 已新增 Catalog 範例模組與公開模組化單體比較；facade + typed persistence 優先項已落地 |
-| 維運議題 | 未開始 | 下一輪 |
+| 維運議題 | 草稿 | 可觀測性(可靠性指標經 Prometheus `/metrics` + 選用 OTLP 追蹤)已記於 `08-operational-concerns/observability.md`;重試/死信/復原/多實例安全見 `05-events-and-messaging` |
 
 ---
 

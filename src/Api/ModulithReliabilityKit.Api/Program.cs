@@ -1,10 +1,14 @@
 using MediatR;
 using ModulithReliabilityKit.Api.Modules;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.DependencyInjection;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.DomainEventsDispatching;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 using ModulithReliabilityKit.Modules.Catalog.Infrastructure.Configuration;
 using ModulithReliabilityKit.Modules.Notifications.Infrastructure.Configuration;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,6 +40,28 @@ if (string.Equals(builder.Configuration["Messaging:Transport"], "Nats", StringCo
 builder.Services.AddCatalogModule(builder.Configuration.GetConnectionString("Catalog")!);
 builder.Services.AddNotificationsModule(builder.Configuration.GetConnectionString("Notifications")!);
 
+// Observability: expose the reliability metrics (Prometheus /metrics) and spans. Metrics are always
+// recorded; traces are exported only when an OTLP endpoint is configured (Observability:OtlpEndpoint).
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService("ModulithReliabilityKit.Api"))
+    .WithMetrics(metrics => metrics
+        .AddMeter(ReliabilityInstrumentation.MeterName)
+        .AddAspNetCoreInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddPrometheusExporter())
+    .WithTracing(tracing =>
+    {
+        tracing
+            .AddSource(ReliabilityInstrumentation.ActivitySourceName)
+            .AddAspNetCoreInstrumentation();
+
+        var otlpEndpoint = builder.Configuration["Observability:OtlpEndpoint"];
+        if (!string.IsNullOrWhiteSpace(otlpEndpoint))
+        {
+            tracing.AddOtlpExporter(exporter => exporter.Endpoint = new Uri(otlpEndpoint));
+        }
+    });
+
 var app = builder.Build();
 
 // Register each module's domain-event -> notification mappings on the shared mapper.
@@ -56,6 +82,7 @@ app.MapGet("/", () => Results.Ok(new { service = "ModulithReliabilityKit.Api", s
     .WithName("Root");
 
 app.MapHealthChecks("/health");
+app.MapPrometheusScrapingEndpoint();
 app.MapCatalogEndpoints();
 app.MapNotificationsEndpoints();
 

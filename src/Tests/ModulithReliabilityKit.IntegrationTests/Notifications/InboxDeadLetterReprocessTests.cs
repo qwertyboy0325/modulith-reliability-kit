@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModulithReliabilityKit.BuildingBlocks.Application.Inbox;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.Modules.Catalog.IntegrationEvents;
 using ModulithReliabilityKit.Modules.Notifications.Application.Inbox;
 using ModulithReliabilityKit.Modules.Notifications.Application.ProductAnnouncements;
@@ -42,7 +43,7 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
         // Reprocess: the poisoned message is requeued and the dead-letter is marked resolved atomically.
         await using (var context = _fixture.CreateContext())
         {
-            var result = await new InboxDeadLetterReprocessor(context)
+            var result = await new InboxDeadLetterReprocessor(context, new ReliabilityMetrics())
                 .ReprocessAsync(deadLetterId, "operator@test");
 
             Assert.Equal(ReprocessDeadLetterOutcome.Requeued, result.Outcome);
@@ -86,7 +87,7 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
         // A second reprocess of the same (now resolved) dead-letter must not requeue or re-apply.
         await using (var context = _fixture.CreateContext())
         {
-            var result = await new InboxDeadLetterReprocessor(context).ReprocessAsync(deadLetterId, "operator@test");
+            var result = await new InboxDeadLetterReprocessor(context, new ReliabilityMetrics()).ReprocessAsync(deadLetterId, "operator@test");
             Assert.Equal(ReprocessDeadLetterOutcome.AlreadyResolved, result.Outcome);
         }
 
@@ -100,7 +101,7 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
         await _fixture.ResetAsync();
 
         await using var context = _fixture.CreateContext();
-        var result = await new InboxDeadLetterReprocessor(context).ReprocessAsync(Guid.NewGuid(), "operator@test");
+        var result = await new InboxDeadLetterReprocessor(context, new ReliabilityMetrics()).ReprocessAsync(Guid.NewGuid(), "operator@test");
 
         Assert.Equal(ReprocessDeadLetterOutcome.NotFound, result.Outcome);
     }
@@ -137,7 +138,7 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
     private async Task ReprocessAsync(Guid deadLetterId)
     {
         await using var context = _fixture.CreateContext();
-        await new InboxDeadLetterReprocessor(context).ReprocessAsync(deadLetterId, "operator@test");
+        await new InboxDeadLetterReprocessor(context, new ReliabilityMetrics()).ReprocessAsync(deadLetterId, "operator@test");
     }
 
     private async Task DrainWithRealDispatcherAsync()
@@ -148,7 +149,7 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
     }
 
     private static NotificationsInboxProcessor BuildProcessor(NotificationsContext context, IInboxDispatcher dispatcher)
-        => new(context, dispatcher, ImmediatePolicy, NullLogger<NotificationsInboxProcessor>.Instance);
+        => new(context, dispatcher, ImmediatePolicy, new ReliabilityMetrics(), NullLogger<NotificationsInboxProcessor>.Instance);
 
     private async Task<Guid> SingleDeadLetterIdAsync(Guid logicalId)
     {

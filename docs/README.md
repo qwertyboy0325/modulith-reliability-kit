@@ -54,7 +54,8 @@ Three labels are used throughout:
 7. `05-events-and-messaging/reliability-matrix.md`
 8. `07-module-architecture/catalog-module-best-practices.md`
 9. `07-module-architecture/modular-monolith-ddd-comparison.md`
-10. `09-lessons-learned/architecture-rules-for-my-own-project.md`
+10. `08-operational-concerns/observability.md`
+11. `09-lessons-learned/architecture-rules-for-my-own-project.md`
 
 ## 4. What this documentation is NOT
 
@@ -84,6 +85,8 @@ docs/
   07-module-architecture/
     catalog-module-best-practices.md
     modular-monolith-ddd-comparison.md
+  08-operational-concerns/
+    observability.md
   09-lessons-learned/
     architecture-rules-for-my-own-project.md
   10-skeleton/
@@ -94,11 +97,11 @@ docs/
 
 Adjustments vs. the originally proposed structure:
 
-- **Only the documents required for the first pass were created.** Empty stub files for
-  `03-domain-model/`, `04-persistence/`, `06-background-processing/`, `08-operational-concerns/`
+- **Only the documents grounded in code were created.** Empty stub files for
+  `03-domain-model/`, `04-persistence/`, `06-background-processing/`
   were intentionally **not** created to avoid documenting things not yet grounded in code. They are
-  listed as the next pass.
-- The numbering gaps (no `03`, `04`, `06`, `08` yet) are deliberate and match the proposed taxonomy,
+  listed as the next pass. `08-operational-concerns/observability.md` now exists (metrics + tracing).
+- The numbering gaps (no `03`, `04`, `06` yet) are deliberate and match the proposed taxonomy,
   so later passes slot in without renumbering.
 - `solution-structure.md` / `composition-root.md` content was **folded into**
   `01-foundation/dependency-injection.md` because the composition root and the DI strategy are best
@@ -121,7 +124,7 @@ Adjustments vs. the originally proposed structure:
 | Persistence (EF/Dapper)  | Not started | Next pass (per-module DbContext, migrations, Dapper-vs-EF split)                       |
 | Background processing    | Not started | Next pass (outbox/inbox scheduling, internal commands depth)                          |
 | Module architecture      | Draft | Catalog sample module plus public modular-monolith comparison; facade + typed persistence priorities implemented |
-| Operational concerns     | Partial | Retry/dead-letter, dead-letter recovery, and multi-instance safety are documented in `05-events-and-messaging`; a dedicated doc covering observability (metrics/tracing) remains a next pass |
+| Operational concerns     | Draft | Retry/dead-letter, dead-letter recovery, and multi-instance safety in `05-events-and-messaging`; observability (reliability metrics via Prometheus `/metrics` + opt-in OTLP traces) documented in `08-operational-concerns/observability.md` |
 
 ---
 

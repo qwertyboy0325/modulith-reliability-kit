@@ -145,6 +145,24 @@ The transport guarantees are pinned against a real NATS server by
 delivered once one starts; a failed handler is redelivered). Implementation:
 `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` + `NatsSubscriptionBackgroundService.cs`.
 
+## Part 4 — Observe the reliability metrics (~30s)
+
+**Talking point:** the interesting numbers in an async system are the failure paths — retry rate and
+dead-letter count — not just request latency. They are emitted straight from the drain code and scrapeable.
+
+```bash
+# After creating a product and letting the drains run (Part 1):
+curl -s http://localhost:5099/metrics | grep '^messaging_'
+# e.g. messaging_outbox_published_total{module="catalog"} 1
+#      messaging_inbox_processed_total{module="notifications"} 1
+#      messaging_inbox_process_duration_milliseconds_* (histogram)
+```
+
+Counters cover publish / processed / **retried** / **dead_lettered** / dead-letter **reprocessed** /
+transport **redelivered**. Traces (spans `outbox.publish`, `inbox.process`, `nats.*`) export via OTLP when
+`Observability:OtlpEndpoint` is set. Details:
+[`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
+
 ## Suggested 3-minute recording script
 
 1. **(20s) Framing.** "Modular monolith, DDD. The thesis: durable publish is not durable delivery.

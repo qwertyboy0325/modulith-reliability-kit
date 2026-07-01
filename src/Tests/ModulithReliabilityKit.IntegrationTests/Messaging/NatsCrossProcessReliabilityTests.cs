@@ -2,6 +2,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Microsoft.Extensions.Logging.Abstractions;
 using ModulithReliabilityKit.BuildingBlocks.Application.Events;
+using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Diagnostics;
 using ModulithReliabilityKit.BuildingBlocks.Infrastructure.Events;
 
 namespace ModulithReliabilityKit.IntegrationTests.Messaging;
@@ -31,7 +32,7 @@ public sealed class NatsCrossProcessReliabilityTests : IAsyncLifetime
         var options = NewOptions();
         var received = new TaskCompletionSource<DemoIntegrationEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        using var bus = new NatsEventBus(options, NullLogger<NatsEventBus>.Instance);
+        using var bus = new NatsEventBus(options, new ReliabilityMetrics(), NullLogger<NatsEventBus>.Instance);
         bus.Subscribe(new CapturingHandler(received));
 
         var sent = new DemoIntegrationEvent(Guid.NewGuid(), DateTime.UtcNow, "durable-payload");
@@ -61,7 +62,7 @@ public sealed class NatsCrossProcessReliabilityTests : IAsyncLifetime
         var attempts = 0;
         var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        using var bus = new NatsEventBus(options, NullLogger<NatsEventBus>.Instance);
+        using var bus = new NatsEventBus(options, new ReliabilityMetrics(), NullLogger<NatsEventBus>.Instance);
         bus.Subscribe(new FlakyHandler(() =>
         {
             // Fail the first delivery (nack → redeliver), succeed on the retry.
