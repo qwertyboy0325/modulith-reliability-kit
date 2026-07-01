@@ -61,6 +61,12 @@ generic "Module A / Module B" placeholders) that show the risk classes a real ma
    a conscious choice.
 4. **`Unknown` rows are real gaps.** A published event with no found subscriber is either dead weight or a
    subscription that lives somewhere not yet inspected — resolve it before shipping.
+5. **Dead-letter is a holding state, not a grave.** A message that exhausts its retries is parked, not lost —
+   the payload and last error are preserved. Once the downstream cause is fixed, an operator requeues it and
+   the normal (idempotent) inbox drain applies it **exactly once**; the dead-letter is marked resolved in the
+   same transaction, so a message is never simultaneously dead-lettered and pending. Recovery loop:
+   `InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`, pinned by
+   `InboxDeadLetterReprocessTests`.
 
 ## What evidence is missing (to resolve `Unknown`)
 
@@ -75,6 +81,8 @@ generic "Module A / Module B" placeholders) that show the risk classes a real ma
 - The classification discipline itself: **every integration event must have a row in a matrix like this**
   before it ships.
 - The one fully-durable pattern: outbox publish + inbox consume + retry/dead-letter.
+- A **recovery path out of the dead-letter table** (requeue → idempotent re-apply), so operators can drain a
+  poison-message backlog after a fix instead of hand-editing rows.
 
 ## What not to copy blindly
 

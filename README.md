@@ -31,7 +31,7 @@ Each hop in a cross-module event flow has a *different* guarantee. Conflating th
 | --- | --------- | --------- |
 | Aggregate change → outbox row | single EF transaction | atomic (transactional outbox) |
 | Outbox row → bus publish | background processor, mark-after-publish | at-least-once (consumers must be idempotent) |
-| Bus → consumer (durable) | inbox ingest + retry + dead-letter | at-least-once with dead-letter |
+| Bus → consumer (durable) | inbox ingest + retry + dead-letter + operator reprocess | at-least-once, dead-lettered, and recoverable |
 | Direct publish (no outbox) | best-effort only | droppable — allowed *only* if explicitly classified |
 
 Full analysis and the per-event classification method:
@@ -51,6 +51,7 @@ faith.
 | Inbox ingest is **idempotent** (duplicate delivery ⇒ one row, one effect) | [`InboxWriter.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Inbox/InboxWriter.cs) | [`NotificationsInboxReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/NotificationsInboxReliabilityTests.cs) · `Duplicate_Delivery_Produces_Exactly_One_Inbox_Row_And_One_Effect` |
 | Inbox apply is **transactional exactly-once**; a crash mid-apply rolls back and recovers | [`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs) | `NotificationsInboxReliabilityTests` · `Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` |
 | **Retry** with back-off, then **dead-letter** after max attempts | [`InboxRetryPolicy.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Application/Inbox/InboxRetryPolicy.cs) | [`InboxRetryPolicyTests`](src/Tests/ModulithReliabilityKit.ReliabilityTests/Inbox/InboxRetryPolicyTests.cs) (unit) · `NotificationsInboxReliabilityTests.Repeated_Failures_Dead_Letter_The_Message_After_Max_Attempts` |
+| **Dead-letter recovery**: a poisoned message can be requeued and applied **exactly once**; the dead-letter is marked resolved atomically; re-runs are no-ops | [`InboxDeadLetterReprocessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Inbox/InboxDeadLetterReprocessor.cs) | [`InboxDeadLetterReprocessTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/InboxDeadLetterReprocessTests.cs) · `Reprocessing_A_Dead_Letter_Requeues_It_And_Applies_The_Effect_Exactly_Once` |
 | End-to-end: create ⇒ durable consume ⇒ **exactly one** announcement; redelivery absorbed idempotently | wiring in [`Program.cs`](src/Api/ModulithReliabilityKit.Api/Program.cs) | [`CrossModuleReliabilityE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs) (2 tests) |
 | Same story through the **HTTP surface** (create via API ⇒ read announcement via API) | API endpoints in `Program.cs` | [`CatalogToNotificationsHttpE2ETests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Http/CatalogToNotificationsHttpE2ETests.cs) |
 | Cross-module references allowed **only** via `IntegrationEvents`; layer direction | project boundaries | [`ArchitectureTests`](src/Tests/ModulithReliabilityKit.ArchitectureTests) |
@@ -72,6 +73,7 @@ This is an actively-built kit. Stated honestly so the code and the claims match:
 | Two reference modules (`Catalog` producer, `Notifications` consumer) with module facades + typed module persistence | Implemented |
 | Transactional **outbox** (publish path) + PostgreSQL migrations | Implemented |
 | Durable **inbox** consumer (idempotent ingest, retry, dead-letter) wired end-to-end | Implemented |
+| **Dead-letter recovery**: list + reprocess (requeue, apply-once) via Notifications facade & admin endpoints | Implemented |
 | End-to-end durable consume across a **second module** | Implemented |
 | Reliability **integration tests on real PostgreSQL** (Testcontainers): idempotency, crash recovery, dead-letter, cross-module e2e | Implemented |
 | **HTTP-level e2e** (WebApplicationFactory): create product via API → durable consume → announcement readable via API | Implemented |
