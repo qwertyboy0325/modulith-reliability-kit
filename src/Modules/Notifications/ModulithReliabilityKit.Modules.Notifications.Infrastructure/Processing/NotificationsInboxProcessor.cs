@@ -66,8 +66,22 @@ internal sealed class NotificationsInboxProcessor
 
         await using (var transaction = await _context.Database.BeginTransactionAsync(cancellationToken))
         {
-            var message = await _context.InboxMessages
-                .FirstOrDefaultAsync(x => x.Id == id && x.ProcessedOnUtc == null, cancellationToken);
+            // Claim the row with a Postgres row lock so multiple processor instances (multi-instance
+            // deployment) never apply the same message concurrently. FOR UPDATE SKIP LOCKED means a
+            // second instance skips a row already claimed by the first instead of blocking on it or
+            // double-dispatching. Kept as verbatim SQL (ToList, no LINQ composition) so EF does not
+            // wrap it in a sub-select, which Postgres disallows for locking clauses.
+            // Schema/table are compile-time constants (kept literal); only the id is a bound parameter
+            // ({0} is a FromSqlRaw placeholder, not C# interpolation, so it is parameterized safely).
+            var claimed = await _context.InboxMessages
+                .FromSqlRaw(
+                    $"SELECT * FROM \"{NotificationsContext.Schema}\".\"inbox_messages\" "
+                    + "WHERE \"id\" = {0} AND \"processed_on_utc\" IS NULL "
+                    + "FOR UPDATE SKIP LOCKED",
+                    id)
+                .ToListAsync(cancellationToken);
+
+            var message = claimed.Count > 0 ? claimed[0] : null;
 
             if (message is null)
             {
