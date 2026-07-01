@@ -192,6 +192,14 @@ problem and the design decision this kit makes in response.
   that sets the required tenant-scoping session state — returning empty results and blocking
   legitimate work instead of only unauthorized access. *Design decision in this kit:* each module
   owns its `DbContext` and persistence wiring is deliberate and per-module, never implicit.
+- **Write amplification on a high-throughput ingest path.** At hundreds of millions of writes/day, an
+  unconditional upsert of "latest state" on every packet turned into an ~100% update ratio and dead
+  tuples past ~80% of the table (MVCC marks each `UPDATE`'s old version dead), degrading the whole
+  store faster than autovacuum could recover it. *Design lesson (write-path sibling of the kit's
+  idempotency):* make writes **conditional** (only when something materially changed), keep hot
+  mutable state off the durable per-event path (write-behind on a bounded interval), and compress /
+  retain history by policy with **lock-aware, non-blocking** maintenance. Full de-identified write-up:
+  [`docs/09-lessons-learned/high-write-time-series-ingest.md`](docs/09-lessons-learned/high-write-time-series-ingest.md).
 
 The distilled rule set lives in
 [`docs/09-lessons-learned/architecture-rules-for-my-own-project.md`](docs/09-lessons-learned/architecture-rules-for-my-own-project.md).
