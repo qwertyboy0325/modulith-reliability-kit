@@ -175,6 +175,15 @@ transport **redelivered**. Traces (spans `outbox.publish`, `inbox.process`, `nat
 4. **(20s) Close.** "Every claim links to code and a test — check it, don't trust it." Point at the
    README verification map.
 
+## Further reading — design at scale (optional talking point)
+
+The same "reliability under real load" thesis, one layer down at the storage/write path, is written up
+as a de-identified case study:
+[`docs/09-lessons-learned/high-write-time-series-ingest.md`](docs/09-lessons-learned/high-write-time-series-ingest.md).
+Worth a 20–30s mention on camera — it shows the reasoning behind a high-write time-series ingest path
+(MVCC write amplification, conditional/idempotent writes, write-behind, columnar compression, lock-aware
+tiering, row-width economics), which is the part that took the most design effort.
+
 ## Teardown
 
 ```bash
