@@ -9,6 +9,15 @@ It is not a generic scaffolding template. It is a small, runnable reference impl
 written engineering case study: what to copy, what to copy *with changes*, and what *not* to copy
 from real modular-monolith systems — grounded in source, not slideware.
 
+**Start here** — pick your fast path:
+
+- **See it work** → [`DEMO.md`](DEMO.md). One command (`./scripts/demo.sh up`) runs the capstone: the
+  *same* message processed **exactly once** across two API processes on one NATS + one PostgreSQL.
+- **Check the work, don't trust it** → the [guarantee → code → test map](#verify-the-claims-guarantee--code--test).
+  Every reliability claim links to where it is enforced *and* the test that pins it.
+- **Get the idea in 60 seconds** → [the reliability model](#the-reliability-model-core-idea):
+  *durable publish is not durable delivery*, worked out hop by hop.
+
 ## What this demonstrates
 
 - **Reliability judgment for distributed-ish systems.** The central thesis — *durable publish is not
