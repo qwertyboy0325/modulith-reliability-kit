@@ -253,3 +253,10 @@ The repository code namespace is `ModulithReliabilityKit`. A helper script can r
 a different product/module name if you want to reuse it as a starting point — see
 [`TEMPLATE.md`](TEMPLATE.md). Reuse is a secondary use case; the primary purpose of this repo is the
 reliability reference implementation and the case study above.
+
+## License
+
+Released under the [MIT License](LICENSE) — free to read, copy, modify, and reuse with attribution.
+The de-identified case-study material is original writing and carries no proprietary content; any
+reference codebases studied while building this kit are git-ignored and not redistributed here (see
+[Reference material and attribution](#reference-material-and-attribution)).
