@@ -113,6 +113,9 @@ Only each module's `IntegrationEvents` project is a public cross-module contract
 
 ## Run it
 
+Prefer a guided tour? [`DEMO.md`](DEMO.md) is a ~5-minute runnable walkthrough (live durable path +
+the failure-path guarantees proven by tests), with a recording script.
+
 ```bash
 dotnet build src/ModulithReliabilityKit.sln
 dotnet test src/ModulithReliabilityKit.sln   # integration tests spin up throwaway PostgreSQL via Testcontainers (Docker required)
