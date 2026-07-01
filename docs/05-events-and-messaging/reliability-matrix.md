@@ -70,9 +70,10 @@ generic "Module A / Module B" placeholders) that show the risk classes a real ma
    dead-letter resolution are staged on one `DbContext` and committed by a single `SaveChanges`, so a
    message is never simultaneously dead-lettered and pending. Recovery loop:
    `InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`, pinned by
-   `InboxDeadLetterReprocessTests`. **Scope:** reprocess is proven idempotent for *sequential* re-runs
-   (already-resolved → no-op); *concurrent* operator reprocess of the same dead-letter is not currently
-   guarded — the final effect still lands once via the inbox claim, but the resolution bookkeeping can race.
+   `InboxDeadLetterReprocessTests`. Reprocess is idempotent **and concurrency-safe**:
+   the dead-letter row is claimed with a blocking `FOR UPDATE` lock, so two operators reprocessing the
+   same dead-letter serialize — it is requeued exactly once and the second request observes it already
+   resolved (pinned by `Concurrent_Reprocess_Of_The_Same_Dead_Letter_Requeues_Exactly_Once`).
 
 ## What evidence is missing (to resolve `Unknown`)
 

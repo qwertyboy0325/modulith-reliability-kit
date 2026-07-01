@@ -106,6 +106,42 @@ public sealed class InboxDeadLetterReprocessTests : IClassFixture<NotificationsD
         Assert.Equal(ReprocessDeadLetterOutcome.NotFound, result.Outcome);
     }
 
+    [Fact]
+    public async Task Concurrent_Reprocess_Of_The_Same_Dead_Letter_Requeues_Exactly_Once()
+    {
+        await _fixture.ResetAsync();
+        var productId = Guid.NewGuid();
+        var @event = NewEvent(productId);
+
+        await IngestAsync(@event);
+        await DeadLetterAsync(@event);
+        var deadLetterId = await SingleDeadLetterIdAsync(@event.Id);
+
+        // Two operators reprocess the same dead-letter at once, on separate connections. The blocking
+        // FOR UPDATE claim must serialize them: exactly one requeues; the other observes it resolved.
+        await using var contextA = _fixture.CreateContext();
+        await using var contextB = _fixture.CreateContext();
+
+        var results = await Task.WhenAll(
+            new InboxDeadLetterReprocessor(contextA, new ReliabilityMetrics()).ReprocessAsync(deadLetterId, "operator-a"),
+            new InboxDeadLetterReprocessor(contextB, new ReliabilityMetrics()).ReprocessAsync(deadLetterId, "operator-b"));
+
+        var outcomes = new[] { results[0].Outcome, results[1].Outcome };
+        Assert.Contains(ReprocessDeadLetterOutcome.Requeued, outcomes);
+        Assert.Contains(ReprocessDeadLetterOutcome.AlreadyResolved, outcomes);
+
+        // The downstream is healthy now: the drain applies the recovered effect exactly once.
+        await DrainWithRealDispatcherAsync();
+        Assert.Equal(1, await CountAnnouncementsAsync(productId));
+        Assert.Equal("processed", await InboxStatusAsync(@event.Id));
+
+        // The dead-letter was requeued/resolved exactly once (a single row, resolved).
+        await using var assertContext = _fixture.CreateContext();
+        var deadLetter = await assertContext.InboxDeadLetters.SingleAsync(x => x.Id == deadLetterId);
+        Assert.NotNull(deadLetter.ResolvedOnUtc);
+        Assert.Equal("reprocessed", deadLetter.ResolutionStatus);
+    }
+
     private static ProductCreatedIntegrationEvent NewEvent(Guid productId) => new(
         id: Guid.NewGuid(),
         occurredOnUtc: DateTime.UtcNow,

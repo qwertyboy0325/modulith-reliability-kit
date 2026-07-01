@@ -6,10 +6,12 @@ using ModulithReliabilityKit.Modules.Notifications.Application.Inbox;
 namespace ModulithReliabilityKit.Modules.Notifications.Infrastructure.Inbox;
 
 /// <summary>
-/// Recovers a dead-lettered message. The reset of the original inbox row and the resolution of the
-/// dead-letter record are staged on the same <see cref="NotificationsContext"/> and committed by a
-/// single <c>SaveChanges</c>, so recovery is atomic: the message is never left both dead-lettered and
-/// requeued. The actual re-application happens later, on the normal inbox drain, which stays idempotent.
+/// Recovers a dead-lettered message. The dead-letter row is claimed with a blocking <c>FOR UPDATE</c>
+/// lock, then the reset of the original inbox row and the resolution of the dead-letter record are
+/// committed in the same transaction, so recovery is atomic <b>and</b> concurrency-safe: two operators
+/// reprocessing the same dead-letter serialize on the row lock, so it is requeued exactly once (the
+/// second request observes it already resolved and is a no-op). The actual re-application happens later,
+/// on the normal inbox drain, which stays idempotent.
 /// </summary>
 internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
 {
@@ -32,16 +34,33 @@ internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
         string requestedBy,
         CancellationToken cancellationToken = default)
     {
-        var deadLetter = await _context.InboxDeadLetters
-            .FirstOrDefaultAsync(x => x.Id == deadLetterId, cancellationToken);
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // Claim the dead-letter row with a blocking Postgres row lock so two concurrent operator
+        // reprocess requests for the same dead-letter serialize: the first requeues and resolves it;
+        // the second blocks on the lock, then re-reads it as resolved and becomes a no-op. Kept as
+        // verbatim SQL (ToList, no LINQ composition) so EF does not wrap it in a sub-select, which
+        // Postgres disallows for locking clauses. Schema/table are compile-time constants; {0} is a
+        // FromSqlRaw placeholder (parameterized), not C# interpolation.
+        var claimed = await _context.InboxDeadLetters
+            .FromSqlRaw(
+                $"SELECT * FROM \"{NotificationsContext.Schema}\".\"inbox_dead_letters\" "
+                + "WHERE \"id\" = {0} "
+                + "FOR UPDATE",
+                deadLetterId)
+            .ToListAsync(cancellationToken);
+
+        var deadLetter = claimed.Count > 0 ? claimed[0] : null;
 
         if (deadLetter is null)
         {
+            await transaction.CommitAsync(cancellationToken);
             return new ReprocessDeadLetterResult(ReprocessDeadLetterOutcome.NotFound, deadLetterId, null);
         }
 
         if (deadLetter.ResolvedOnUtc is not null)
         {
+            await transaction.CommitAsync(cancellationToken);
             return new ReprocessDeadLetterResult(
                 ReprocessDeadLetterOutcome.AlreadyResolved,
                 deadLetterId,
@@ -58,6 +77,7 @@ internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
         {
             Resolve(deadLetter, requestedBy, ResolvedAlreadyApplied, "Effect already applied; dead-letter closed.");
             await _context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return new ReprocessDeadLetterResult(
                 ReprocessDeadLetterOutcome.AlreadyResolved,
                 deadLetterId,
@@ -85,6 +105,7 @@ internal sealed class InboxDeadLetterReprocessor : IInboxDeadLetterReprocessor
         Resolve(deadLetter, requestedBy, ResolvedByReprocess, "Requeued for reprocessing.");
 
         await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         _metrics.DeadLetterReprocessed(ModuleName);
 
