@@ -5,36 +5,19 @@
 A .NET 8 **modular-monolith / DDD** backend that treats **cross-module messaging reliability**
 as a first-class design concern.
 
-It is not a generic scaffolding template. It is a small, runnable reference implementation plus a
-written engineering case study: what to copy, what to copy *with changes*, and what *not* to copy
-from real modular-monolith systems — grounded in source, not slideware.
+It is deliberately small — one producer module (`Catalog`) emits one integration event and one
+consumer module (`Notifications`) handles it — because it is a demonstrator of the reliability
+machinery, not a system to rebuild. The thesis it works out is that *durable publish is not durable
+delivery*, using a transactional outbox, an idempotent inbox, retry/dead-letter, and an opt-in NATS
+JetStream transport for cross-process delivery. The design is distilled from problems hit while
+operating high-throughput, multi-tenant modular monoliths in production.
 
-**Start here** — pick your fast path:
+Every guarantee below links to the code that enforces it and the test that pins it. The fastest way in
+is the [guarantee → code → test map](#verify-the-claims-guarantee--code--test); the limits of each
+guarantee, and the fault model the tests use, are in
+[Guarantee boundaries & non-goals](#guarantee-boundaries--non-goals).
 
-- **See it work** → [`DEMO.md`](DEMO.md). One command (`./scripts/demo.sh up`) runs the capstone: each
-  message yields **exactly one committed effect** across two API processes on one NATS + one PostgreSQL
-  (at-least-once delivery, collapsed by the idempotent inbox).
-- **Check the work, don't trust it** → the [guarantee → code → test map](#verify-the-claims-guarantee--code--test).
-  Every reliability claim links to where it is enforced *and* the test that pins it.
-- **Get the idea in 60 seconds** → [the reliability model](#the-reliability-model-core-idea):
-  *durable publish is not durable delivery*, worked out hop by hop.
-
-## What this demonstrates
-
-- **Reliability judgment for distributed-ish systems.** The central thesis — *durable publish is not
-  durable delivery* — is worked out end to end: transactional outbox, idempotent inbox, retry, and
-  dead-letter, with every integration event classified by its real delivery guarantee. The named
-  guarantees are pinned by integration tests against a real PostgreSQL under a documented fault model
-  (rollback + committed-but-unpublished crash): at-least-once publish, **exactly-once local apply**,
-  idempotent redelivery, retry → dead-letter → recovery. See
-  [Guarantee boundaries & non-goals](#guarantee-boundaries--non-goals) for what is *not* covered.
-- **Reverse-engineering and design extraction.** Two real-world modular-monolith codebases were read
-  bottom-up and distilled into a copyable rule set. See
-  [`docs/09-lessons-learned/architecture-rules-for-my-own-project.md`](docs/09-lessons-learned/architecture-rules-for-my-own-project.md).
-- **Boundaries enforced by tests, not conventions.** Module isolation and layer direction are checked
-  by architecture tests, not just documented.
-
-## The reliability model (core idea)
+## The reliability model
 
 Each hop in a cross-module event flow has a *different* guarantee. Conflating them is how
 "the database changed but nobody was notified, with no record" bugs happen.
@@ -68,9 +51,7 @@ and [`integration-events.md`](docs/05-events-and-messaging/integration-events.md
 
 ## Verify the claims (guarantee → code → test)
 
-The reliability claims above are not prose — each one has a specific place it is enforced and a test
-that pins it. This table is the fast path for a reviewer who wants to check the work, not take it on
-faith.
+Each claim has a specific place it is enforced and a test that pins it.
 
 | Guarantee | Enforced in | Pinned by test |
 | --------- | ----------- | -------------- |
@@ -87,11 +68,11 @@ faith.
 | **Durable, cross-process transport** (opt-in): `Publish` awaits a JetStream `PubAck` (the broker accepted the message into the stream under its configured retention/storage) before the outbox marks the row; delivery to a durable consumer is at-least-once across processes. *Broker replication, retention sizing, storage exhaustion, and stream/consumer lifecycle are out of scope.* | [`NatsEventBus.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Events/NatsEventBus.cs) (NATS JetStream) | [`NatsCrossProcessReliabilityTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Messaging/NatsCrossProcessReliabilityTests.cs) (publish-before-subscriber delivered once a subscriber starts; failed handler → redelivery) |
 | **Observability**: inbox outcomes (processed / retried / dead-lettered) are emitted as metrics from the real drain path, scrapeable at `/metrics`; spans are **per-process** (no cross-process trace propagation) | [`ReliabilityMetrics.cs`](src/BuildingBlocks/ModulithReliabilityKit.BuildingBlocks.Infrastructure/Diagnostics/ReliabilityMetrics.cs) | [`ReliabilityMetricsInstrumentationTests`](src/Tests/ModulithReliabilityKit.IntegrationTests/Notifications/ReliabilityMetricsInstrumentationTests.cs) |
 
-**60-second tour** (if you only read three files): the model in
-[`reliability-matrix.md`](docs/05-events-and-messaging/reliability-matrix.md) → the hard part
-([`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs):
-exactly-once *local* apply + retry + dead-letter) → the guarantees exercised end-to-end
-([`CrossModuleReliabilityE2ETests.cs`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs)).
+The center of the design is
+[`NotificationsInboxProcessor.cs`](src/Modules/Notifications/ModulithReliabilityKit.Modules.Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs)
+(exactly-once local apply + retry + dead-letter in one transaction); its end-to-end behaviour is
+exercised by
+[`CrossModuleReliabilityE2ETests.cs`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs).
 
 ## Guarantee boundaries & non-goals
 
@@ -138,7 +119,7 @@ include OS-level process kills, connection loss mid-commit, or broker failure.
 
 ## Implementation status
 
-This is an actively-built kit. Stated honestly so the code and the claims match:
+Stated so the code and the claims match:
 
 | Capability | Status |
 | ---------- | ------ |
@@ -174,12 +155,11 @@ Only each module's `IntegrationEvents` project is a public cross-module contract
 
 ## Run it
 
-Prefer a guided tour? [`DEMO.md`](DEMO.md) is a ~5-minute runnable walkthrough (live durable path +
-the failure-path guarantees exercised by tests), including a **two-instance capstone** — each message
-yields exactly one committed effect across two API processes on one NATS + one PostgreSQL (at-least-once
-delivery via JetStream, collapsed by the idempotent inbox + `FOR UPDATE SKIP LOCKED`) — with a recording
-script. Reliability metrics are scrapeable at `GET /metrics` (Prometheus); see
-[`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
+[`DEMO.md`](DEMO.md) is a runnable walkthrough: the live durable path, the failure-path guarantees
+exercised by tests, and a two-instance run showing each message committed exactly once across two API
+processes on one NATS + one PostgreSQL (at-least-once delivery via JetStream, collapsed by the
+idempotent inbox + `FOR UPDATE SKIP LOCKED`). Reliability metrics are scrapeable at `GET /metrics`
+(Prometheus); see [`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
 
 ```bash
 dotnet build src/ModulithReliabilityKit.sln
@@ -213,7 +193,7 @@ Read in order; the notes are written bottom-up (foundations first).
 - `docs/00-orientation/` — project shape and a reading order.
 - `docs/01-foundation/` — building blocks and dependency injection.
 - `docs/02-application-pipeline/` — unit of work.
-- `docs/05-events-and-messaging/` — **integration events + reliability matrix** (the heart of this kit).
+- `docs/05-events-and-messaging/` — **integration events + reliability matrix** (the core of the design).
 - `docs/07-module-architecture/` — module boundaries and the DDD-reference comparison.
 - `docs/09-lessons-learned/` — the extracted architecture rule set.
 - `docs/10-skeleton/` — what was actually built and why.
@@ -234,11 +214,10 @@ Where this kit deliberately diverges — e.g. a transaction-safe inbox processor
 process-then-mark base — the notes say so, out of respect for the original rather than to claim
 improvement. (Personal thanks in [Acknowledgements](#acknowledgements).)
 
-**Informed by real-world problems (de-identified).** The reliability thesis is not academic — it
-distills failure modes the author has hit while operating high-throughput, multi-tenant modular
-monoliths in production. The examples below are **generalized on purpose**: no employer, product,
-dataset, or proprietary identifier is referenced. What is shared is the *engineering shape* of the
-problem and the design decision this kit makes in response.
+**Informed by real-world problems (de-identified).** These distil failure modes the author hit while
+operating high-throughput, multi-tenant modular monoliths in production. The examples below are
+generalized on purpose: no employer, product, dataset, or proprietary identifier is referenced. What
+is shared is the *engineering shape* of the problem and the design decision this kit makes in response.
 
 - **"The database changed but the effect silently didn't happen."** Under load, asynchronous
   cross-module event processing can stall when a shared resource is exhausted — e.g. a connection
