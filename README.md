@@ -178,12 +178,14 @@ This kit was built by studying modular-monolith / DDD reference codebases **and*
 problems hit while operating a real production system.
 
 **Primary architectural reference — Kamil Grzybek's
-[Modular Monolith with DDD](https://github.com/kgrzybek/modular-monolith-with-ddd)**, the
-widely-cited open-source reference for modular monoliths in .NET. The module layout
+[Modular Monolith with DDD](https://github.com/kgrzybek/modular-monolith-with-ddd)** (MIT,
+© 2019 Kamil Grzybek), the widely-cited open-source reference for modular monoliths in .NET, and the
+single biggest influence on this kit. The module layout
 (`Domain` / `Application` / `Infrastructure` / `IntegrationEvents`), the internal-command / outbox /
 inbox vocabulary, and the "boundaries enforced by architecture tests" discipline follow its lead.
 Where this kit deliberately diverges — e.g. a transaction-safe inbox processor instead of a shared
-process-then-mark base — the notes say so.
+process-then-mark base — the notes say so, out of respect for the original rather than to claim
+improvement. (Personal thanks in [Acknowledgements](#acknowledgements).)
 
 **Informed by real-world problems (de-identified).** The reliability thesis is not academic — it
 distills failure modes the author has hit while operating high-throughput, multi-tenant modular
@@ -256,7 +258,20 @@ reliability reference implementation and the case study above.
 
 ## License
 
-Released under the [MIT License](LICENSE) — free to read, copy, modify, and reuse with attribution.
-The de-identified case-study material is original writing and carries no proprietary content; any
+Released under the [MIT License](LICENSE). You may use, copy, modify, and redistribute the code and
+documentation under its terms; copies or substantial portions must retain the copyright and license
+notice. The de-identified case-study material is original writing and carries no proprietary content; any
 reference codebases studied while building this kit are git-ignored and not redistributed here (see
 [Reference material and attribution](#reference-material-and-attribution)).
+
+## Acknowledgements
+
+My heartfelt thanks to **Kamil Grzybek** and his
+[**Modular Monolith with DDD**](https://github.com/kgrzybek/modular-monolith-with-ddd) (MIT,
+© 2019 Kamil Grzybek). This project was my entry point into thinking seriously about software
+architecture — where modular boundaries, the outbox/inbox model, and test-enforced discipline first
+clicked for me. What I learned from it gave me the foundation to go on and **lead a real project**, and
+to run head-first into the messy, real-world reliability problems that this kit distills and answers.
+The shape of my architectural thinking owes a great deal to that work. If you find this kit useful, read
+the original first: it remains the more complete and authoritative treatment, and this repository is
+best understood as a focused study built in its tradition — not a replacement for it.
