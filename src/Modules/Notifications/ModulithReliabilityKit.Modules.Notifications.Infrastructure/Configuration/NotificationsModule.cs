@@ -30,6 +30,8 @@ public static class NotificationsModule
         services.AddScoped<INotificationsModule, NotificationsModuleFacade>();
         services.AddScoped<IInboxWriter, InboxWriter>();
         services.AddScoped<IInboxDispatcher, ProductCreatedInboxDispatcher>();
+        services.AddScoped<IInboxDeadLetterReadStore, InboxDeadLetterReadStore>();
+        services.AddScoped<IInboxDeadLetterReprocessor, InboxDeadLetterReprocessor>();
         services.AddScoped<IProductAnnouncementStore, ProductAnnouncementStore>();
         services.AddScoped<IProductAnnouncementReadStore, ProductAnnouncementReadStore>();
 
