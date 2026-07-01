@@ -120,7 +120,9 @@ Only each module's `IntegrationEvents` project is a public cross-module contract
 ## Run it
 
 Prefer a guided tour? [`DEMO.md`](DEMO.md) is a ~5-minute runnable walkthrough (live durable path +
-the failure-path guarantees proven by tests), with a recording script. Reliability metrics are scrapeable
+the failure-path guarantees proven by tests), including a **two-instance capstone** — the same message
+processed exactly once across two API processes on one NATS + one PostgreSQL (JetStream at-least-once +
+`FOR UPDATE SKIP LOCKED`) — with a recording script. Reliability metrics are scrapeable
 at `GET /metrics` (Prometheus); see [`docs/08-operational-concerns/observability.md`](docs/08-operational-concerns/observability.md).
 
 ```bash

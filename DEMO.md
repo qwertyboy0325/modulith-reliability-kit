@@ -145,6 +145,78 @@ The transport guarantees are pinned against a real NATS server by
 delivered once one starts; a failed handler is redelivered). Implementation:
 `BuildingBlocks.Infrastructure/Events/NatsEventBus.cs` + `NatsSubscriptionBackgroundService.cs`.
 
+### Two instances → exactly-once (SKIP LOCKED + JetStream, the capstone)
+
+**Talking point:** this is the whole thesis in one shot. Run **two** API instances against the **same**
+NATS and the **same** PostgreSQL. Every product still yields **exactly one** announcement — even though
+both instances drain the shared outbox (at-least-once *publish*, possibly duplicated), JetStream is
+at-least-once *delivery*, and both instances drain the shared inbox concurrently. Two independent
+duplication sources, collapsed to one effect by the **idempotent inbox** + **`FOR UPDATE SKIP LOCKED`**.
+
+```bash
+# 0. Shared infra (Postgres + NATS/JetStream) up.
+docker compose -f docker-compose.postgres.yml up -d
+
+# 1. Instance A. Wait until it logs "Applying ... migrations" and GET /health returns Healthy
+#    BEFORE starting B (startup migration is not concurrency-guarded; let A migrate first).
+Messaging__Transport=Nats \
+  dotnet run --project src/Api/ModulithReliabilityKit.Api/ModulithReliabilityKit.Api.csproj --urls http://localhost:5099
+
+# 2. Instance B (second terminal). B's migration is a no-op since A already applied it.
+Messaging__Transport=Nats \
+  dotnet run --project src/Api/ModulithReliabilityKit.Api/ModulithReliabilityKit.Api.csproj --urls http://localhost:5098
+```
+
+Both instances log a bound durable consumer (same durable name ⇒ JetStream delivers each message to
+**one** of them, queue-group style):
+
+```
+NATS durable consumer modulith-kit-ProductCreatedIntegrationEvent bound to subject integration-events.ProductCreatedIntegrationEvent
+```
+
+Create a batch of products (mix the target ports to prove it does not matter which instance receives the write):
+
+```bash
+for i in $(seq 1 10); do
+  port=$([ $((i % 2)) -eq 0 ] && echo 5099 || echo 5098)
+  curl -s -X POST "http://localhost:$port/catalog/products/" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\":\"MP-$i\",\"price\":$i,\"currency\":\"usd\"}" > /dev/null
+done
+```
+
+Wait ~15s for the outbox (10s) + inbox (5s) drains, then check the **exactly-once** invariant:
+
+```bash
+docker exec -it modulith_reliability_kit-postgres \
+  psql -U modulith_reliability_kit -d modulith_reliability_kit -c "
+SELECT
+  (SELECT count(*) FROM catalog.products)                                   AS products_created,
+  (SELECT count(*) FROM notifications.inbox_messages)                       AS inbox_rows,
+  (SELECT count(*) FROM notifications.inbox_messages WHERE status<>'processed') AS not_processed,
+  (SELECT count(*) FROM notifications.product_announcements)                AS announcements,
+  (SELECT count(DISTINCT product_id) FROM notifications.product_announcements) AS distinct_products;"
+```
+
+**Expected (on a clean DB, 10 products):** all four counts are **equal** and `not_processed = 0` —
+`products_created = inbox_rows = announcements = distinct_products` (= 10 here). One inbox row and one
+announcement per product, no duplicates, despite duplicate publishes and two concurrent drainers. **That
+equality is the proof** (it holds regardless of the starting count).
+
+Optional — see how the two instances split the apply work via the metrics counter:
+
+```bash
+curl -s http://localhost:5099/metrics | grep '^messaging_inbox_processed_total'
+curl -s http://localhost:5098/metrics | grep '^messaging_inbox_processed_total'
+# The two counters sum to the number of applied messages. The split is timing-dependent: with a small
+# batch one instance often claims all pending rows in a single tick (so the other shows 0). SKIP LOCKED
+# guarantees no row is applied twice — not an even split. Under sustained load both instances share.
+```
+
+Each half of this is pinned by a test: JetStream durable/at-least-once delivery by
+`NatsCrossProcessReliabilityTests`, and concurrent inbox drain (`FOR UPDATE SKIP LOCKED`, exactly-once
+apply, no drops) by `InboxConcurrencyReliabilityTests`. This part runs the two together, live.
+
 ## Part 4 — Observe the reliability metrics (~30s)
 
 **Talking point:** the interesting numbers in an async system are the failure paths — retry rate and
