@@ -20,7 +20,9 @@ internal sealed class NotificationsInboxProcessor
     private const int BatchSize = 50;
     private const int MaxErrorLength = 4000;
 
-    private static readonly string[] PendingStatuses = ["pending", "retrying"];
+    // List (not array) so `.Contains` binds to the instance method and never the span-based
+    // MemoryExtensions.Contains overload, which breaks EF Core's parameter evaluation on some SDKs.
+    private static readonly List<string> PendingStatuses = ["pending", "retrying"];
 
     private readonly NotificationsContext _context;
     private readonly IInboxDispatcher _dispatcher;
