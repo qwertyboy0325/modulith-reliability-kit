@@ -27,6 +27,20 @@ from real modular-monolith systems — grounded in source, not slideware.
 Each hop in a cross-module event flow has a *different* guarantee. Conflating them is how
 "the database changed but nobody was notified, with no record" bugs happen.
 
+```mermaid
+flowchart LR
+  A[Aggregate change] -->|one EF txn · atomic| O[(outbox)]
+  O -->|drain · mark-after-publish · at-least-once| BUS{{IEventsBus · in-memory}}
+  BUS -->|idempotent ingest · unique index| IN[(inbox)]
+  IN -->|SKIP LOCKED claim · exactly-once apply| FX([announcement effect])
+  FX -.->|failure · retry w/ backoff| IN
+  IN -.->|max attempts| DL[(dead-letter)]
+  DL -.->|operator reprocess| IN
+```
+
+Each edge is a claim with a home in the code and a test that pins it — see the
+[verification map](#verify-the-claims-guarantee--code--test) below.
+
 | Hop | Mechanism | Guarantee |
 | --- | --------- | --------- |
 | Aggregate change → outbox row | single EF transaction | atomic (transactional outbox) |
