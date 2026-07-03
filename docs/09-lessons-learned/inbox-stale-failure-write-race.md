@@ -8,6 +8,20 @@ reference**: it was committed red first (commit `6bd3018`) and fixed in the comm
 is reproducible by checking out the red commit — see
 [Reproduction](#reproduction-test-first-deterministic).
 
+## Fast takeaway
+
+`FOR UPDATE SKIP LOCKED` can serialize the worker that applies an inbox effect.
+
+It does not make later state writes safe by itself.
+
+Any later retry, dead-letter, or bookkeeping transaction must re-establish the row invariant before it writes.
+
+## Evidence timeline
+
+1. A deterministic regression was committed red: `6bd3018`.
+2. The fix re-claimed the row under a blocking `FOR UPDATE`: `7d37540`.
+3. The same test is green on `main`.
+
 ## Purpose
 
 Record a concrete concurrency bug in the inbox *failure-recording* path: what interleaving triggers it, why
@@ -60,16 +74,23 @@ bug.
   message that actually succeeded. `inbox_dead_letters` has no uniqueness on `(logical_id, occurred_on_utc)`,
   so an operator can see — and reprocess — a "poison" message that was fine.
 
-## Claim impact
+## Claim impact (before the fix)
 
-This violates two written claims, which are being scoped down to match the code until the fix lands:
+Before the fix, the interleaving contradicted two written claims:
 
 - README verification map: "…applied exactly once (no double effect, **no spurious failure**)".
 - `05-events-and-messaging/integration-events.md`: the note that `FOR UPDATE SKIP LOCKED` prevents
   "record a spurious failure".
 
-`SKIP LOCKED` prevents concurrent *double-dispatch* of the effect; it does **not** cover the post-rollback
-failure-recording path, which runs in a later transaction, unlocked and without re-checking state.
+`SKIP LOCKED` prevents concurrent *double-dispatch* of the effect; it does **not** by itself cover the
+post-rollback failure-recording path, which ran in a later transaction, unlocked and without re-checking
+state.
+
+The README and the implementation now state the narrower, verified guarantee:
+
+- the apply path claims rows with `FOR UPDATE SKIP LOCKED`;
+- failure recording **re-claims** the row under a blocking `FOR UPDATE`;
+- failure recording is a **no-op** when another drainer already set `processed_on_utc`.
 
 ## Reproduction (test-first, deterministic)
 
