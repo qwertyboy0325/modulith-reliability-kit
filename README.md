@@ -17,6 +17,12 @@ is the [guarantee → code → test map](#verify-the-claims-guarantee--code--tes
 guarantee, and the fault model the tests use, are in
 [Guarantee boundaries & non-goals](#guarantee-boundaries--non-goals).
 
+> **A concurrency lesson included:** `FOR UPDATE SKIP LOCKED` protected the inbox apply path, but it did
+> not automatically protect a later failure-recording transaction from overwriting another worker's success.
+>
+> This repository preserves a deterministic red-to-green reproduction of that stale failure-write race:
+> [read the case study](docs/09-lessons-learned/inbox-stale-failure-write-race.md).
+
 ## The reliability model
 
 Each hop in a cross-module event flow has a *different* guarantee. Conflating them is how
@@ -73,6 +79,21 @@ The center of the design is
 (exactly-once local apply + retry + dead-letter in one transaction); its end-to-end behaviour is
 exercised by
 [`CrossModuleReliabilityE2ETests.cs`](src/Tests/ModulithReliabilityKit.IntegrationTests/CrossModule/CrossModuleReliabilityE2ETests.cs).
+
+## Use this when
+
+- A relational database update must trigger downstream asynchronous work.
+- You need to reason about a DB commit that succeeds before a message is published.
+- Your consumers can receive duplicate or redelivered messages.
+- You use PostgreSQL-backed workers, inbox tables, or `FOR UPDATE SKIP LOCKED`.
+- You want each reliability claim tied to implementation code and an integration test.
+
+## Do not use this when
+
+- You need a drop-in production messaging framework.
+- You need end-to-end exactly-once behavior across HTTP, email, payments, or webhooks.
+- You need broker HA, multi-region failover, stream lifecycle management, or throughput benchmarking guidance.
+- You need a Kafka implementation; this repository uses NATS JetStream as one durable transport example.
 
 ## Guarantee boundaries & non-goals
 
