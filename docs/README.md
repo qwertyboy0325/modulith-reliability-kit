@@ -122,7 +122,7 @@ Adjustments vs. the originally proposed structure:
 | Unit of Work             | Draft  | Explicit-transaction UoW; dispatch-events-then-SaveChanges documented                        |
 | Integration events       | Draft  | Outbox publish vs direct publish paths; in-memory bus only                                   |
 | Reliability matrix       | Draft  | Per-event classification template; best-effort vs durable decision recorded; dead-letter recovery + multi-instance (`SKIP LOCKED`) findings added |
-| Lessons learned / rules  | Draft  | Personal rule set extracted; critical. De-identified case study added: high-write time-series ingest (write amplification, tiered storage, row width). Inbox stale-failure write race documented (concurrency bug found by claim audit; test-first fix pending) |
+| Lessons learned / rules  | Draft  | Personal rule set extracted; critical. De-identified case study added: high-write time-series ingest (write amplification, tiered storage, row width). Inbox stale-failure write race fixed test-first (concurrency bug found by claim audit; reproducible red preserved at its commit, pinned by a regression test) |
 | Skeleton implementation  | Draft | `src/ModulithReliabilityKit` skeleton + Catalog/Notifications modules; typed module persistence + PostgreSQL demo/migration runbook added |
 | Domain model             | Not started | Next pass (entities, VOs, domain-event dispatching depth)                              |
 | Persistence (EF/Dapper)  | Not started | Next pass (per-module DbContext, migrations, Dapper-vs-EF split)                       |

@@ -2,10 +2,11 @@
 
 ## Status
 
-**Known issue, reproducible in the current code.** It was surfaced by the reliability-claim audit and is
-documented *before* the fix, on purpose: the record of a gap and its regression test is more useful than a
-silently-patched line. The fix is test-first — a deterministic regression test lands **red** on today's
-code, then the fix turns it **green**.
+**Fixed**, and pinned by a regression test. `RecordFailureAsync` now re-claims the row under `FOR UPDATE`
+and no-ops if it was already processed by a concurrent drainer. The failing state is **preserved for
+reference**: it was committed red first (commit `6bd3018`) and fixed in the commit that follows, so the bug
+is reproducible by checking out the red commit — see
+[Reproduction](#reproduction-test-first-deterministic).
 
 ## Purpose
 
@@ -88,8 +89,18 @@ released) and *before* `RecordFailureAsync`:
 Assertions: the effect is applied once, the row stays `processed` with `processed_on_utc` set, `retry_count`
 stays `0`, and no `inbox_dead_letters` row exists.
 
-**Observed on the current code — red.** `RecordFailureAsync` overwrites the row, so the status is `retrying`
-instead of `processed`:
+After the fix the failure-recording is a no-op on an already-processed row, and the test is **green** on
+`main`.
+
+**Reproduce the red for reference.** Check out the pre-fix commit and run the test:
+
+```bash
+git checkout 6bd3018   # the intentionally-red commit
+dotnet test src/Tests/ModulithReliabilityKit.IntegrationTests/ModulithReliabilityKit.IntegrationTests.csproj \
+  --filter Failure_Recording_After_A_Concurrent_Success_Does_Not_Overwrite_The_Processed_Row
+```
+
+It fails with:
 
 ```text
 Assert.Equal() Failure: Strings differ
@@ -97,16 +108,18 @@ Expected: "processed"
 Actual:   "retrying"
 ```
 
-After the fix (re-lock + `processed_on_utc` check in `RecordFailureAsync`), the failure-recording becomes a
-no-op on an already-processed row and the test goes green.
+Equivalently, on `main`, replace the `FOR UPDATE` re-claim in `RecordFailureAsync` with a plain
+`FirstOrDefaultAsync(x => x.Id == id)` (the pre-fix read) and the same assertion fails.
 
-## Fix (planned, minimal)
+## Fix
 
 `RecordFailureAsync` re-claims the row in its own transaction with `SELECT ... FOR UPDATE` and, if
-`processed_on_utc IS NOT NULL` (already succeeded), commits a **no-op**. Only a still-unprocessed row may bump
-`retry_count` or move to dead-letter. A DLQ uniqueness constraint (`(logical_id, occurred_on_utc)` index +
-upsert/guard) is a defense-in-depth follow-up — it is *not* required to close this race, since the source
-fix already prevents the spurious dead-letter insert.
+`processed_on_utc IS NOT NULL` (already succeeded), commits a **no-op**. Only a still-unprocessed row bumps
+`retry_count` or moves to dead-letter. A **blocking** `FOR UPDATE` (not `SKIP LOCKED`) is deliberate: if a
+concurrent drainer is still mid-apply, this waits for it to commit and then observes the now-processed row,
+rather than skipping and recording a failure anyway. A DLQ uniqueness constraint (`(logical_id,
+occurred_on_utc)` index + upsert/guard) is a defense-in-depth follow-up — it is *not* required to close this
+race, since the source fix already prevents the spurious dead-letter insert.
 
 ## Lesson
 

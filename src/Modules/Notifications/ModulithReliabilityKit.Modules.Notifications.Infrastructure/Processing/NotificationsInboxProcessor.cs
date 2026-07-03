@@ -12,7 +12,8 @@ namespace ModulithReliabilityKit.Modules.Notifications.Infrastructure.Processing
 /// <list type="number">
 ///   <item>The business effect and the "processed" mark commit in a single transaction (no partial state).</item>
 ///   <item>On failure the transaction is rolled back and the change tracker cleared, so a failed attempt
-///   leaves no trace except the retry bookkeeping.</item>
+///   leaves no trace except the retry bookkeeping — which re-claims the row under a <c>FOR UPDATE</c>
+///   lock and no-ops if a concurrent drainer processed the row in between.</item>
 ///   <item>Retry/dead-letter is decided by <see cref="InboxRetryPolicy"/>; after the bounded attempts the
 ///   message is copied to the dead-letter table and removed from the pending set.</item>
 /// </list>
@@ -157,9 +158,26 @@ internal sealed class NotificationsInboxProcessor
     {
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
-        var message = await _context.InboxMessages.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-        if (message is null)
+        // Re-claim the row under a row lock before recording failure. The failed attempt rolled back and
+        // released its lock, so a concurrent drainer (multi-instance deployment) may have claimed and
+        // processed this row in between. A blocking FOR UPDATE serializes against that drainer, and the
+        // processed_on_utc check turns this into a no-op when the message already succeeded — otherwise
+        // the failure bookkeeping would overwrite another instance's success with a spurious
+        // retrying/dead-letter status and metric. Verbatim SQL (ToList, no LINQ composition) so EF does
+        // not wrap the locking clause in a sub-select, which Postgres disallows. Schema/table are
+        // compile-time constants (kept literal); only the id is a bound parameter.
+        var claimed = await _context.InboxMessages
+            .FromSqlRaw(
+                $"SELECT * FROM \"{NotificationsContext.Schema}\".\"inbox_messages\" "
+                + "WHERE \"id\" = {0} "
+                + "FOR UPDATE",
+                id)
+            .ToListAsync(cancellationToken);
+
+        var message = claimed.Count > 0 ? claimed[0] : null;
+        if (message is null || message.ProcessedOnUtc is not null)
         {
+            // Not found, or already processed by a concurrent drainer: there is no failure to record.
             await transaction.CommitAsync(cancellationToken);
             return;
         }

@@ -4,9 +4,9 @@
 
 ## 狀態
 
-**已知問題，於目前程式碼可重現。** 這是可靠性 claim 稽核時浮現的缺口，並**刻意在修正前先記錄**：一個缺口
-加上鎖住它的 regression test，比默默改掉一行更有價值。修正採 test-first —— 先在今天的程式上寫出一個會
-**red** 的 deterministic 測試，修完再轉 **green**。
+**已修正**,並由 regression test 釘住。`RecordFailureAsync` 現在會以 `FOR UPDATE` 重新 claim 該列,若已被
+併發 drainer 處理過就 no-op。失敗狀態**保留供參考**:先以 red 提交(commit `6bd3018`),再於下一個 commit
+修正,因此只要 checkout 該 red commit 即可重現此 bug —— 見[重現](#重現test-firstdeterministic)。
 
 ## 目的
 
@@ -83,7 +83,17 @@ rollback 之後（鎖已釋放）、`RecordFailureAsync` 之前觸發：
 斷言：效果恰好套用一次、該列仍 `processed` 且 `processed_on_utc` 有值、`retry_count` 仍為 `0`、沒有
 `inbox_dead_letters` 列。
 
-**在目前程式上實測 —— red。** `RecordFailureAsync` 覆蓋了該列,狀態變成 `retrying` 而非 `processed`：
+修正後,對已 processed 的列做失敗記錄會變成 no-op,測試在 `main` 上為 **green**。
+
+**重現 red 供參考。** checkout 修正前的 commit 並跑該測試：
+
+```bash
+git checkout 6bd3018   # 刻意 red 的 commit
+dotnet test src/Tests/ModulithReliabilityKit.IntegrationTests/ModulithReliabilityKit.IntegrationTests.csproj \
+  --filter Failure_Recording_After_A_Concurrent_Success_Does_Not_Overwrite_The_Processed_Row
+```
+
+它會以下列訊息失敗：
 
 ```text
 Assert.Equal() Failure: Strings differ
@@ -91,15 +101,16 @@ Expected: "processed"
 Actual:   "retrying"
 ```
 
-修正後(在 `RecordFailureAsync` 重新加鎖 + 檢查 `processed_on_utc`),對已 processed 的列做失敗記錄會變成
-no-op,測試即轉 green。
+等效做法:在 `main` 上把 `RecordFailureAsync` 的 `FOR UPDATE` 重新 claim 換回單純的
+`FirstOrDefaultAsync(x => x.Id == id)`（修正前的讀取）,同一個斷言就會失敗。
 
-## 修正（規劃中，最小）
+## 修正
 
 `RecordFailureAsync` 在自己的交易裡用 `SELECT ... FOR UPDATE` 重新 claim 該列；若 `processed_on_utc IS NOT
-NULL`（已成功）就提交一個 **no-op**。只有仍未處理的列才能累加 `retry_count` 或進死信。DLQ 唯一性約束
-（`(logical_id, occurred_on_utc)` 索引 + upsert/guard）是 defense-in-depth 的後續項 —— 關閉本競態**並不
-需要**它，因為源頭修正已能阻止假死信的插入。
+NULL`（已成功）就提交一個 **no-op**。只有仍未處理的列才能累加 `retry_count` 或進死信。這裡刻意用**阻塞式**
+`FOR UPDATE`(而非 `SKIP LOCKED`):若併發 drainer 仍在套用中,這會等它提交後看到已 processed 的列,而不是
+跳過後照樣記一筆失敗。DLQ 唯一性約束（`(logical_id, occurred_on_utc)` 索引 + upsert/guard）是
+defense-in-depth 的後續項 —— 關閉本競態**並不需要**它，因為源頭修正已能阻止假死信的插入。
 
 ## 教訓
 

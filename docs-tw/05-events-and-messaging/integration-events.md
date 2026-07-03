@@ -103,7 +103,7 @@ SELECT 到期列 id（status IN ('pending','retrying') 且 next_retry_on_utc 為
 
 逐列 claim 使用 `FOR UPDATE SKIP LOCKED`,因此跑多個 API 實例永遠不會**重複套用效果**:第二個 drainer 會跳過已被第一個 claim 的列,而非重複派工。見 `Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs`,由 `InboxConcurrencyReliabilityTests` 釘住。
 
-> **已知競態(由 claim 稽核發現,修正待辦)。** 此鎖只保護*套用*路徑,不含*失敗記錄*路徑。`RecordFailureAsync` 跑在另一個未加鎖的交易,且讀取該列時不重新檢查 `processed_on_utc`;因此若 drainer A 失敗 rollback、drainer B 隨後 claim 到該列並成功,A 仍可能以假的 `retrying`/死信狀態、被累加的 `retry_count`、以及 retried/dead-lettered 指標覆蓋 B 的成功 —— 甚至為一則成功的訊息插入死信列。**本地效果仍是恰好一次**(claim query 以 `processed_on_utc IS NULL` 過濾),所以這是狀態／可觀測性的汙染,不是重複執行。細節與規劃中的 test-first 修正:`09-lessons-learned/inbox-stale-failure-write-race.md`。
+> **失敗記錄同樣受鎖保護。** 套用路徑用 `SKIP LOCKED`;*失敗記錄*路徑(`RecordFailureAsync`)則以阻塞式 `FOR UPDATE` 重新 claim 該列,且當 `processed_on_utc` 已設定時 no-op。因此若 drainer A 失敗 rollback、drainer B 隨後 claim 到該列並成功,A 的失敗記帳會看到已 processed 的列而不做任何事 —— 而非以假的 `retrying`/死信狀態、被累加的 `retry_count`、以及誤導的指標覆蓋 B 的成功。這關閉了一個由 claim 稽核發現的過期寫入競態;可重現的失敗與修正見 `09-lessons-learned/inbox-stale-failure-write-race.md`。
 
 重試／退避定義於 `BuildingBlocks.Application/Inbox/InboxRetryPolicy.cs`；用盡重試的訊息移到帶解析流程的死信記錄。
 
@@ -128,7 +128,7 @@ SELECT 到期列 id（status IN ('pending','retrying') 且 next_retry_on_utc 為
 | Notification handler → `IEventsBus.Publish` | 記憶體 bus | 進程內；例外會浮現（不吞） |
 | `IEventsBus` → 訂閱方（inbox writer） | 唯一索引 `(logical_id, occurred_on_utc)` + 吞掉 `23505` | 冪等 ingest → 持久 |
 | `IEventsBus` → 訂閱方（直連） | mediator 發佈 | **best-effort，可丟棄** |
-| Inbox 列 → handler | drain + 重試 + 死信;逐列 `FOR UPDATE SKIP LOCKED` claim | 至少一次 + 死信;**恰好套用一次*本地*效果**(效果具多實例安全;*失敗記錄*路徑有已知過期寫入競態 —— 見上方註記;外部副作用不在範圍) |
+| Inbox 列 → handler | drain + 重試 + 死信;逐列 `FOR UPDATE SKIP LOCKED` claim;失敗記錄以 `FOR UPDATE` 重新 claim | 至少一次 + 死信;**恰好套用一次*本地*效果**,含失敗記錄路徑皆多實例安全(見上方註記;外部副作用不在範圍) |
 | 路徑 B 直接發佈 | 僅 `IEventsBus.Publish` | **best-effort、可丟棄、無紀錄** |
 
 ## 建議抄什麼

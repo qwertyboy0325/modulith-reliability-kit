@@ -94,7 +94,7 @@ docs-tw/
 | Unit of Work | 草稿 | 顯式交易 UoW；先派發事件再 `SaveChanges` |
 | 整合事件 | 草稿 | Outbox 發佈 vs 直接 Publish；僅記憶體匯流排 |
 | 可靠性矩陣 | 草稿 | 每事件分類範本；best-effort vs durable 決策已記錄 |
-| 教訓與規則 | 草稿 | 個人規則集;新增去識別化案例:高寫入時序攝取(寫入放大、分層儲存、列寬);新增 inbox 失敗記錄過期寫入競態(claim 稽核發現的併發 bug,test-first 修正待辦) |
+| 教訓與規則 | 草稿 | 個人規則集;新增去識別化案例:高寫入時序攝取(寫入放大、分層儲存、列寬);inbox 失敗記錄過期寫入競態已 test-first 修正(claim 稽核發現的併發 bug;保留可重現的 red 於其 commit,由 regression test 釘住) |
 | Skeleton 實作 | 草稿 | `src/ModulithReliabilityKit` 骨架 + Catalog/Notifications 模組；已新增 typed module persistence 與 PostgreSQL migration 示範章節 |
 | 領域模型 | 未開始 | 下一輪 |
 | 持久化（EF/Dapper） | 未開始 | 下一輪 |

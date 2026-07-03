@@ -74,11 +74,11 @@ generic "Module A / Module B" placeholders) that show the risk classes a real ma
    the dead-letter row is claimed with a blocking `FOR UPDATE` lock, so two operators reprocessing the
    same dead-letter serialize — it is requeued exactly once and the second request observes it already
    resolved (pinned by `Concurrent_Reprocess_Of_The_Same_Dead_Letter_Requeues_Exactly_Once`).
-6. **A lock only guards the section it wraps (known race).** The inbox apply is claimed with
-   `FOR UPDATE SKIP LOCKED`, but the *failure-recording* path (`RecordFailureAsync`) runs in a later,
-   unlocked transaction — so a rolled-back drainer can record a spurious retry/dead-letter over another
-   drainer's concurrent success. The local effect stays exactly-once; the row status and metrics can lie.
-   Found by the claim audit; documented with a test-first fix in
+6. **A lock only guards the section it wraps.** The inbox apply is claimed with `FOR UPDATE SKIP LOCKED`;
+   a rolled-back drainer's *failure-recording* (`RecordFailureAsync`) runs in a later transaction, so it
+   must also re-claim the row (blocking `FOR UPDATE`) and no-op when it was already processed — otherwise it
+   records a spurious retry/dead-letter over another drainer's concurrent success. This stale-write race was
+   found by the claim audit and fixed test-first; the reproducible failure and the fix are in
    `09-lessons-learned/inbox-stale-failure-write-race.md`.
 
 ## What evidence is missing (to resolve `Unknown`)
