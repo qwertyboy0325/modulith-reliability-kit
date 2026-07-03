@@ -8,6 +8,20 @@
 併發 drainer 處理過就 no-op。失敗狀態**保留供參考**:先以 red 提交(commit `6bd3018`),再於下一個 commit
 修正,因此只要 checkout 該 red commit 即可重現此 bug —— 見[重現](#重現test-firstdeterministic)。
 
+## 快速結論
+
+`FOR UPDATE SKIP LOCKED` 可以序列化「套用 inbox 效果」的那個 worker。
+
+它本身並不會讓後續的狀態寫入變安全。
+
+任何後續的 retry、dead-letter 或記帳交易，在寫入前都必須重新建立該列的不變量。
+
+## 證據時間軸
+
+1. 一個 deterministic regression 先以 red 提交：`6bd3018`。
+2. 修正以阻塞式 `FOR UPDATE` 重新 claim 該列：`7d37540`。
+3. 同一個測試在 `main` 上為 green。
+
 ## 目的
 
 記錄 inbox *失敗記錄*路徑上的一個具體併發 bug：什麼交錯會觸發、為何業務效果仍然正確、它實際汙染了什麼，
@@ -55,16 +69,22 @@ SELECT ... WHERE id = ? AND processed_on_utc IS NULL FOR UPDATE SKIP LOCKED
 - **假死信。** 若 A 的重試額度已用盡，A 會為一則**其實成功**的訊息插入死信列。`inbox_dead_letters` 對
   `(logical_id, occurred_on_utc)` 沒有唯一性，操作者甚至會看到並去 reprocess 一則其實沒問題的「毒訊息」。
 
-## 對 claim 的影響
+## 對 claim 的影響（修正前）
 
-它違反兩處明文 claim，在修正落地前先把措辭收斂成與程式一致：
+修正前，這個交錯違反了兩處明文 claim：
 
 - README 驗證對照表：「…applied exactly once (no double effect, **no spurious failure**)」。
 - `05-events-and-messaging/integration-events.md`：稱 `FOR UPDATE SKIP LOCKED` 可避免「record a spurious
   failure」的註記。
 
-`SKIP LOCKED` 防的是效果的併發*重複派工*；它**不**涵蓋 rollback 之後的失敗記錄路徑 —— 那段跑在後續的
+`SKIP LOCKED` 防的是效果的併發*重複派工*；它**本身不**涵蓋 rollback 之後的失敗記錄路徑 —— 那段跑在後續的
 另一個交易、無鎖、也不重新檢查狀態。
+
+README 與實作現在陳述的是更窄、已驗證的保證：
+
+- 套用路徑以 `FOR UPDATE SKIP LOCKED` claim 該列；
+- 失敗記錄以阻塞式 `FOR UPDATE` **重新 claim** 該列；
+- 當另一 drainer 已設定 `processed_on_utc` 時，失敗記錄為 **no-op**。
 
 ## 重現（test-first、deterministic）
 
