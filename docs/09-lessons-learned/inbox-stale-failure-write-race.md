@@ -72,15 +72,33 @@ failure-recording path, which runs in a later transaction, unlocked and without 
 
 ## Reproduction (test-first, deterministic)
 
-Do not rely on `Task.WhenAll` to race the scheduler — force the interleaving:
+Pinned by
+`InboxConcurrencyReliabilityTests.Failure_Recording_After_A_Concurrent_Success_Does_Not_Overwrite_The_Processed_Row`
+(integration test against a real PostgreSQL).
 
-- Gate the dispatcher (e.g. a test `IInboxDispatcher` backed by a `TaskCompletionSource`).
-- Timeline: A enters dispatch and blocks → release A to throw → A rolls back → B claims + succeeds + commits
-  → then release A into `RecordFailureAsync`.
-- Assert: row stays `processed`, `processed_on_utc` unchanged, `retry_count` unchanged, **no**
-  `inbox_dead_letters` row, and the retried / dead-lettered metrics unchanged.
+The interleaving is **forced, not raced** against the scheduler. A failing attempt rolls back and records its
+failure with no `await` gap in between, so the processor exposes a minimal internal test seam
+(`AfterRollbackBeforeRecordFailureForTests`, a no-op in production) that fires *after* the rollback (lock
+released) and *before* `RecordFailureAsync`:
 
-The test must go red on today's code, then green after the fix.
+1. Processor A claims the row and fails in dispatch → rolls back (lock released).
+2. In the seam, processor B claims the freed row, applies the effect, and commits it `processed`.
+3. A then runs `RecordFailureAsync` against the now-processed row.
+
+Assertions: the effect is applied once, the row stays `processed` with `processed_on_utc` set, `retry_count`
+stays `0`, and no `inbox_dead_letters` row exists.
+
+**Observed on the current code — red.** `RecordFailureAsync` overwrites the row, so the status is `retrying`
+instead of `processed`:
+
+```text
+Assert.Equal() Failure: Strings differ
+Expected: "processed"
+Actual:   "retrying"
+```
+
+After the fix (re-lock + `processed_on_utc` check in `RecordFailureAsync`), the failure-recording becomes a
+no-op on an already-processed row and the test goes green.
 
 ## Fix (planned, minimal)
 

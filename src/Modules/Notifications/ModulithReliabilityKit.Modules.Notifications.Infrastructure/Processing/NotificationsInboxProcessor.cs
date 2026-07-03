@@ -34,6 +34,14 @@ internal sealed class NotificationsInboxProcessor
     private readonly ReliabilityMetrics _metrics;
     private readonly ILogger<NotificationsInboxProcessor> _logger;
 
+    /// <summary>
+    /// Test-only seam. Invoked after a failed attempt has rolled back (releasing the row lock) and
+    /// before <see cref="RecordFailureAsync"/> runs, so a white-box test can deterministically force
+    /// the "another drainer claimed the freed row and succeeded in between" interleaving. Null (a no-op)
+    /// in production.
+    /// </summary>
+    internal Func<long, CancellationToken, Task>? AfterRollbackBeforeRecordFailureForTests { get; set; }
+
     public NotificationsInboxProcessor(
         NotificationsContext context,
         IInboxDispatcher dispatcher,
@@ -136,6 +144,12 @@ internal sealed class NotificationsInboxProcessor
 
         // Discard any business changes staged by the failed attempt before recording retry state.
         _context.ChangeTracker.Clear();
+
+        if (AfterRollbackBeforeRecordFailureForTests is not null)
+        {
+            await AfterRollbackBeforeRecordFailureForTests(id, cancellationToken);
+        }
+
         await RecordFailureAsync(id, failure, cancellationToken);
     }
 

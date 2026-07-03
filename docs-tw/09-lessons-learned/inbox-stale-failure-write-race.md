@@ -68,15 +68,31 @@ SELECT ... WHERE id = ? AND processed_on_utc IS NULL FOR UPDATE SKIP LOCKED
 
 ## 重現（test-first、deterministic）
 
-別靠 `Task.WhenAll` 賭排程 —— 要強制交錯：
+由
+`InboxConcurrencyReliabilityTests.Failure_Recording_After_A_Concurrent_Success_Does_Not_Overwrite_The_Processed_Row`
+釘住（對真實 PostgreSQL 的整合測試）。
 
-- Gate 住 dispatcher（例如用 `TaskCompletionSource` 撐住的測試用 `IInboxDispatcher`）。
-- 時序：A 進入 dispatch 並阻塞 → 放 A 丟例外 → A rollback → B claim + 成功 + 提交 → 再放 A 進
-  `RecordFailureAsync`。
-- 斷言：該列仍 `processed`、`processed_on_utc` 不變、`retry_count` 不變、**沒有** `inbox_dead_letters` 列、
-  retried / dead-lettered 指標不變。
+交錯是**強制的,不是賭排程**。失敗的嘗試 rollback 後緊接著記錄失敗,中間沒有 `await` 空檔,因此處理器
+暴露一個最小的內部測試 seam(`AfterRollbackBeforeRecordFailureForTests`,在生產環境為 no-op),它在
+rollback 之後（鎖已釋放）、`RecordFailureAsync` 之前觸發：
 
-此測試必須在今天的程式上 red，修完後 green。
+1. 處理器 A claim 到該列,dispatch 失敗 → rollback（鎖釋放）。
+2. 在 seam 裡,處理器 B claim 到剛釋放的列,套用效果,並提交為 `processed`。
+3. A 接著對這筆*已 processed* 的列跑 `RecordFailureAsync`。
+
+斷言：效果恰好套用一次、該列仍 `processed` 且 `processed_on_utc` 有值、`retry_count` 仍為 `0`、沒有
+`inbox_dead_letters` 列。
+
+**在目前程式上實測 —— red。** `RecordFailureAsync` 覆蓋了該列,狀態變成 `retrying` 而非 `processed`：
+
+```text
+Assert.Equal() Failure: Strings differ
+Expected: "processed"
+Actual:   "retrying"
+```
+
+修正後(在 `RecordFailureAsync` 重新加鎖 + 檢查 `processed_on_utc`),對已 processed 的列做失敗記錄會變成
+no-op,測試即轉 green。
 
 ## 修正（規劃中，最小）
 

@@ -104,6 +104,40 @@ public sealed class InboxConcurrencyReliabilityTests : IClassFixture<Notificatio
         }
     }
 
+    [Fact]
+    public async Task Failure_Recording_After_A_Concurrent_Success_Does_Not_Overwrite_The_Processed_Row()
+    {
+        await _fixture.ResetAsync();
+        var productId = Guid.NewGuid();
+        var @event = NewEvent(productId);
+        await IngestAsync(@event);
+
+        // Processor A claims the row, fails in dispatch (rollback releases the lock), and then records the
+        // failure. Between the rollback and the failure-recording we deterministically let processor B
+        // claim the freed row and commit it as processed — the exact interleaving a rolled-back drainer
+        // hits when another instance succeeds first. A's failure bookkeeping then runs against an
+        // already-processed row and must be a no-op.
+        await using var contextA = _fixture.CreateContext();
+        var processorA = BuildProcessor(contextA, new AlwaysThrowingDispatcher());
+        processorA.AfterRollbackBeforeRecordFailureForTests = async (_, ct) =>
+        {
+            await using var contextB = _fixture.CreateContext();
+            await BuildProcessor(contextB, RealDispatcher(contextB)).ProcessAsync(ct);
+        };
+
+        await processorA.ProcessAsync();
+
+        // B applied the effect exactly once and marked the row processed. A's failure recording ran on an
+        // already-processed row, so status/retry/dead-letter must be untouched. On the current code
+        // RecordFailureAsync neither re-locks nor re-checks processed_on_utc, so it stomps the success —
+        // these assertions fail until that path re-checks the row's state.
+        Assert.Equal(1, await CountAnnouncementsAsync(productId));
+        Assert.Equal("processed", await InboxStatusAsync(@event.Id));
+        Assert.NotNull(await ProcessedOnUtcAsync(@event.Id));
+        Assert.Equal(0, await InboxRetryCountAsync(@event.Id));
+        Assert.Equal(0, await DeadLetterCountAsync(@event.Id));
+    }
+
     private static ProductCreatedIntegrationEvent NewEvent(Guid productId) => new(
         id: Guid.NewGuid(),
         occurredOnUtc: DateTime.UtcNow,
@@ -141,6 +175,12 @@ public sealed class InboxConcurrencyReliabilityTests : IClassFixture<Notificatio
     {
         await using var context = _fixture.CreateContext();
         return await context.InboxMessages.Where(x => x.LogicalId == logicalId).Select(x => x.RetryCount).SingleAsync();
+    }
+
+    private async Task<DateTime?> ProcessedOnUtcAsync(Guid logicalId)
+    {
+        await using var context = _fixture.CreateContext();
+        return await context.InboxMessages.Where(x => x.LogicalId == logicalId).Select(x => x.ProcessedOnUtc).SingleAsync();
     }
 
     private async Task<int> DeadLetterCountAsync(Guid logicalId)
