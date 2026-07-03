@@ -1,0 +1,102 @@
+# Inbox Stale-Failure Write Race (found by claim audit)
+
+## Status
+
+**Known issue, reproducible in the current code.** It was surfaced by the reliability-claim audit and is
+documented *before* the fix, on purpose: the record of a gap and its regression test is more useful than a
+silently-patched line. The fix is test-first — a deterministic regression test lands **red** on today's
+code, then the fix turns it **green**.
+
+## Purpose
+
+Record a concrete concurrency bug in the inbox *failure-recording* path: what interleaving triggers it, why
+the business effect stays correct anyway, what it *does* corrupt, and the minimal fix that closes it.
+
+## Where
+
+- `Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs` — `ProcessOneCoreAsync` (claim +
+  apply) and `RecordFailureAsync` (the failure bookkeeping that runs after a rollback).
+
+## The mechanism
+
+The happy path claims a row under a Postgres row lock and commits the effect + `processed` mark in one
+transaction:
+
+```text
+SELECT ... WHERE id = ? AND processed_on_utc IS NULL FOR UPDATE SKIP LOCKED
+  → dispatch → set processed_on_utc + status = 'processed' → COMMIT
+```
+
+On failure the transaction rolls back (releasing the lock) and, in a **separate** transaction,
+`RecordFailureAsync` reads the row **by id only** — no `FOR UPDATE`, no `processed_on_utc` check — and
+overwrites its status to `retrying` or `dead_letter`.
+
+Interleaving with two drainers A and B (a legitimate multi-instance deployment):
+
+1. A claims the row (`FOR UPDATE SKIP LOCKED`), dispatch throws, A rolls back → lock released.
+2. B claims the same row (still `processed_on_utc IS NULL`), dispatch succeeds, B commits `processed`.
+3. A now runs `RecordFailureAsync`, reads the row **without a lock or a processed check**, and writes
+   `retrying`/`dead_letter` + bumps `retry_count` on top of B's success.
+
+The window is small (A's rollback → A's next transaction → A's read) but real under concurrency, and fully
+reachable deterministically with a test gate.
+
+## What is NOT corrupted (why it is bounded)
+
+The business effect stays exactly-once. The claim query filters `AND processed_on_utc IS NULL`; B already set
+`processed_on_utc`, and A's failure write never clears it. So the next drain's claim returns no row and the
+effect is never re-applied. **No double effect** — this is a state/observability bug, not a double-execution
+bug.
+
+## What IS corrupted
+
+- **Row status lies.** The row ends `status = 'retrying'` (or `dead_letter`) while `processed_on_utc IS NOT
+  NULL` — a contradictory state that never returns to `processed`. A `retrying` zombie is re-selected on every
+  drain, claims nothing, and spins as a no-op forever.
+- **Metrics lie.** The inbox *processed* counter was incremented by B while the *retried* / *dead-lettered*
+  counter is incremented by A for the **same** message.
+- **Spurious dead-letter.** If A's retry budget was already exhausted, A inserts a dead-letter record for a
+  message that actually succeeded. `inbox_dead_letters` has no uniqueness on `(logical_id, occurred_on_utc)`,
+  so an operator can see — and reprocess — a "poison" message that was fine.
+
+## Claim impact
+
+This violates two written claims, which are being scoped down to match the code until the fix lands:
+
+- README verification map: "…applied exactly once (no double effect, **no spurious failure**)".
+- `05-events-and-messaging/integration-events.md`: the note that `FOR UPDATE SKIP LOCKED` prevents
+  "record a spurious failure".
+
+`SKIP LOCKED` prevents concurrent *double-dispatch* of the effect; it does **not** cover the post-rollback
+failure-recording path, which runs in a later transaction, unlocked and without re-checking state.
+
+## Reproduction (test-first, deterministic)
+
+Do not rely on `Task.WhenAll` to race the scheduler — force the interleaving:
+
+- Gate the dispatcher (e.g. a test `IInboxDispatcher` backed by a `TaskCompletionSource`).
+- Timeline: A enters dispatch and blocks → release A to throw → A rolls back → B claims + succeeds + commits
+  → then release A into `RecordFailureAsync`.
+- Assert: row stays `processed`, `processed_on_utc` unchanged, `retry_count` unchanged, **no**
+  `inbox_dead_letters` row, and the retried / dead-lettered metrics unchanged.
+
+The test must go red on today's code, then green after the fix.
+
+## Fix (planned, minimal)
+
+`RecordFailureAsync` re-claims the row in its own transaction with `SELECT ... FOR UPDATE` and, if
+`processed_on_utc IS NOT NULL` (already succeeded), commits a **no-op**. Only a still-unprocessed row may bump
+`retry_count` or move to dead-letter. A DLQ uniqueness constraint (`(logical_id, occurred_on_utc)` index +
+upsert/guard) is a defense-in-depth follow-up — it is *not* required to close this race, since the source
+fix already prevents the spurious dead-letter insert.
+
+## Lesson
+
+A row lock only protects the critical section it wraps. A compensating / bookkeeping write that runs in a
+*later, separate* transaction must re-establish the invariant — re-lock the row and re-check its state before
+writing. Releasing a lock and then committing "what I decided earlier" is a classic lost update against
+whoever ran in between.
+
+## Next
+
+- `09-lessons-learned/architecture-rules-for-my-own-project.md`

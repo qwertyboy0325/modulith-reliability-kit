@@ -57,6 +57,7 @@ Three labels are used throughout:
 10. `08-operational-concerns/observability.md`
 11. `09-lessons-learned/architecture-rules-for-my-own-project.md`
 12. `09-lessons-learned/high-write-time-series-ingest.md`
+13. `09-lessons-learned/inbox-stale-failure-write-race.md`
 
 ## 4. What this documentation is NOT
 
@@ -91,6 +92,7 @@ docs/
   09-lessons-learned/
     architecture-rules-for-my-own-project.md
     high-write-time-series-ingest.md
+    inbox-stale-failure-write-race.md
   10-skeleton/
     implementation-decisions.md
     build-log.md
@@ -120,7 +122,7 @@ Adjustments vs. the originally proposed structure:
 | Unit of Work             | Draft  | Explicit-transaction UoW; dispatch-events-then-SaveChanges documented                        |
 | Integration events       | Draft  | Outbox publish vs direct publish paths; in-memory bus only                                   |
 | Reliability matrix       | Draft  | Per-event classification template; best-effort vs durable decision recorded; dead-letter recovery + multi-instance (`SKIP LOCKED`) findings added |
-| Lessons learned / rules  | Draft  | Personal rule set extracted; critical. De-identified case study added: high-write time-series ingest (write amplification, tiered storage, row width) |
+| Lessons learned / rules  | Draft  | Personal rule set extracted; critical. De-identified case study added: high-write time-series ingest (write amplification, tiered storage, row width). Inbox stale-failure write race documented (concurrency bug found by claim audit; test-first fix pending) |
 | Skeleton implementation  | Draft | `src/ModulithReliabilityKit` skeleton + Catalog/Notifications modules; typed module persistence + PostgreSQL demo/migration runbook added |
 | Domain model             | Not started | Next pass (entities, VOs, domain-event dispatching depth)                              |
 | Persistence (EF/Dapper)  | Not started | Next pass (per-module DbContext, migrations, Dapper-vs-EF split)                       |

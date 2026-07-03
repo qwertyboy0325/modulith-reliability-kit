@@ -134,11 +134,19 @@ SELECT due row ids (status IN ('pending','retrying') AND next_retry_on_utc IS NU
         → on failure: roll back, then record retry per InboxRetryPolicy; after N attempts → dead-letter
 ```
 
-The per-row claim uses `FOR UPDATE SKIP LOCKED`, so running more than one API instance is safe: a second
-drainer skips a row already claimed by the first instead of double-dispatching it (which would double-apply
-the effect and record a spurious failure). See
-`Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs`, pinned by
-`InboxConcurrencyReliabilityTests`.
+The per-row claim uses `FOR UPDATE SKIP LOCKED`, so running more than one API instance never
+**double-applies the effect**: a second drainer skips a row already claimed by the first instead of
+double-dispatching it. See `Notifications.Infrastructure/Processing/NotificationsInboxProcessor.cs`, pinned
+by `InboxConcurrencyReliabilityTests`.
+
+> **Known race (found by claim audit, fix pending).** The lock guards only the *apply* path, not the
+> *failure-recording* path. `RecordFailureAsync` runs in a separate, unlocked transaction and reads the row
+> without re-checking `processed_on_utc`; so if drainer A fails and rolls back while drainer B then claims
+> the row and succeeds, A can overwrite B's success with a spurious `retrying`/dead-letter status, a bumped
+> `retry_count`, and retried/dead-lettered metrics — possibly even a dead-letter record for a message that
+> succeeded. The **local effect stays exactly-once** (the claim query filters `processed_on_utc IS NULL`),
+> so this is a state/observability corruption, not double execution. Details and the planned test-first fix:
+> `09-lessons-learned/inbox-stale-failure-write-race.md`.
 
 Retry/backoff is defined in `BuildingBlocks.Application/Inbox/InboxRetryPolicy.cs`; exhausted messages move
 to a dead-letter record with a resolution workflow.
@@ -174,7 +182,7 @@ global ordering or exactly-once *timing*:
 | Notification handler → `IEventsBus.Publish` | in-memory bus | In-process; exceptions surface (not swallowed) |
 | `IEventsBus` → subscriber (inbox writer) | unique index `(logical_id, occurred_on_utc)` + swallow `23505` | Idempotent ingest → durable |
 | `IEventsBus` → subscriber (direct) | mediator publish | **Best-effort, droppable** |
-| Inbox row → handler | drain + retry + dead-letter; per-row `FOR UPDATE SKIP LOCKED` claim | At-least-once with dead-letter; **multi-instance safe** (exactly-once *local* apply; external side effects out of scope) |
+| Inbox row → handler | drain + retry + dead-letter; per-row `FOR UPDATE SKIP LOCKED` claim | At-least-once with dead-letter; **exactly-once *local* apply** (effect is multi-instance safe; the *failure-recording* path has a known stale-write race — see note above; external side effects out of scope) |
 | Direct publish (Path B) | `IEventsBus.Publish` only | **Best-effort, droppable, no record** |
 
 ## What to copy

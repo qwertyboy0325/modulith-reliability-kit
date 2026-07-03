@@ -116,7 +116,7 @@ Narrate what the key tests prove (all against real PostgreSQL):
 | `NotificationsInboxReliabilityTests.Crash_After_Staging_Effect_Rolls_Back_And_Recovers_Exactly_Once` | A failed apply (handler throw → rollback) leaves no effect, then recovers exactly once (local effect) |
 | `NotificationsInboxReliabilityTests.Repeated_Failures_Dead_Letter_The_Message_After_Max_Attempts` | A poison message is dead-lettered, not silently lost |
 | `InboxDeadLetterReprocessTests` | Dead-letter **recovery**: requeue → apply exactly once → resolve atomically; re-runs are no-ops |
-| `InboxConcurrencyReliabilityTests` | **Multi-instance safe**: `FOR UPDATE SKIP LOCKED` claim ⇒ a concurrent drainer skips a claimed row (no double effect, no spurious failure) |
+| `InboxConcurrencyReliabilityTests` | **Effect is multi-instance safe**: `FOR UPDATE SKIP LOCKED` claim ⇒ a concurrent drainer skips a claimed row, so the local effect is applied once (no double effect). The *failure-recording* path has a known stale-write race — see [`docs/09-lessons-learned/inbox-stale-failure-write-race.md`](docs/09-lessons-learned/inbox-stale-failure-write-race.md) |
 | `CrossModuleReliabilityE2ETests` | Create ⇒ durable consume ⇒ exactly one announcement, across modules |
 | `CatalogToNotificationsHttpE2ETests` | The same story through the real HTTP host |
 

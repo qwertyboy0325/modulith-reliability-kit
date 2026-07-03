@@ -49,6 +49,7 @@
 3. **完整持久模式** 是 Outbox 發佈 → Inbox 消費 + 重試／死信。此套件即 `ProductCreatedIntegrationEvent`（Catalog → Notifications）。它是參考；任何較弱的做法都必須是有意識的選擇。
 4. **Unknown 列是真缺口。** 發佈但未見訂閱者的事件，不是死重量就是訂閱藏在尚未檢視之處 —— 上線前解決它。
 5. **死信是暫存狀態,不是墳墓。** 用盡重試的訊息是被「停放」而非遺失 —— payload 與最後錯誤都保留。下游原因修好後,由操作者重新排入,正常(冪等)的 Inbox 排空會把其**本地效果恰好套用一次**;重新排入與死信解析是在同一個 `DbContext` 暫存、由單次 `SaveChanges` 提交,因此訊息不會同時處於死信與待處理兩種狀態。恢復迴圈:`InboxDeadLetterReprocessor` + `POST /notifications/inbox/dead-letters/{id}/reprocess`,由 `InboxDeadLetterReprocessTests` 釘住。reprocess 具**冪等且併發安全**:死信列以阻塞式 `FOR UPDATE` 鎖 claim,因此兩個操作者對同一死信 reprocess 會被序列化 —— 恰好重新排入一次,第二個請求會看到它已解析(由 `Concurrent_Reprocess_Of_The_Same_Dead_Letter_Requeues_Exactly_Once` 釘住)。
+6. **鎖只保護它包住的臨界區(已知競態)。** inbox 套用以 `FOR UPDATE SKIP LOCKED` claim,但*失敗記錄*路徑(`RecordFailureAsync`)跑在後續、未加鎖的交易 —— 因此一個已 rollback 的 drainer 可能把假的重試／死信覆蓋到另一個 drainer 的併發成功上。本地效果仍是恰好一次;但列狀態與指標會說謊。由 claim 稽核發現,並以 test-first 修正記錄於 `09-lessons-learned/inbox-stale-failure-write-race.md`。
 
 ## 補齊 Unknown 所需證據
 
@@ -73,4 +74,5 @@
 
 ## 下一篇
 
+- `09-lessons-learned/inbox-stale-failure-write-race.md`
 - `09-lessons-learned/architecture-rules-for-my-own-project.md`
