@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/qwertyboy0325/modulith-reliability-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/qwertyboy0325/modulith-reliability-kit/actions/workflows/ci.yml)
 
+**In plain terms:** a small, test-backed .NET reference for a classic backend failure mode — *the database changed, but the event that should have followed it was never delivered, and nothing recorded that it was lost.* The repo shows how to make that hand-off reliable, and recoverable when it still fails.
+
 A .NET 8 **modular-monolith / DDD** backend that treats **cross-module messaging reliability**
 as a first-class design concern.
 
