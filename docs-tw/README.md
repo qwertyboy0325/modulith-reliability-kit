@@ -50,6 +50,8 @@
 9. `07-module-architecture/modular-monolith-ddd-comparison.md`
 10. `09-lessons-learned/architecture-rules-for-my-own-project.md`
 11. `09-lessons-learned/inbox-stale-failure-write-race.md`
+12. `architecture/container-view.md` —— 高階事件流程圖（視覺概覽）
+13. `architecture/handoff-components.md` —— 元件與 failure boundaries（視覺概覽）
 
 ## 4. 本文件集「不是」什麼
 
@@ -65,6 +67,9 @@
 ```text
 docs-tw/
   README.md
+  architecture/
+    container-view.md
+    handoff-components.md
   00-orientation/
   01-foundation/
   02-application-pipeline/

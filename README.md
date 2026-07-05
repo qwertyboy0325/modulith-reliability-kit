@@ -102,6 +102,7 @@ The integration tests use Testcontainers and require Docker. The architecture an
 ## Documentation map
 
 - [`docs/README.md`](docs/README.md) — reading order and document ownership.
+- [`docs/architecture/`](docs/architecture/) — Mermaid diagrams: a [container view](docs/architecture/container-view.md) of the event flow and a [component / failure-boundary handoff view](docs/architecture/handoff-components.md).
 - [`docs/05-events-and-messaging/`](docs/05-events-and-messaging/) — integration events and the reliability matrix.
 - [`docs/07-module-architecture/`](docs/07-module-architecture/) — module boundaries and architectural comparison.
 - [`docs/09-lessons-learned/`](docs/09-lessons-learned/) — extracted rules and case studies.

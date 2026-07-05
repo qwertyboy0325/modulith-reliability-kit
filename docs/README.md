@@ -58,6 +58,8 @@ Three labels are used throughout:
 11. `09-lessons-learned/architecture-rules-for-my-own-project.md`
 12. `09-lessons-learned/high-write-time-series-ingest.md`
 13. `09-lessons-learned/inbox-stale-failure-write-race.md`
+14. `architecture/container-view.md` — high-level event-flow diagram (visual overview)
+15. `architecture/handoff-components.md` — components and failure boundaries (visual overview)
 
 ## 4. What this documentation is NOT
 
@@ -73,6 +75,9 @@ The proposed taxonomy was kept, with minor adjustments justified below.
 ```text
 docs/
   README.md
+  architecture/
+    container-view.md
+    handoff-components.md
   00-orientation/
     project-map.md
     source-code-reading-order.md
