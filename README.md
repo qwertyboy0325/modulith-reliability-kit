@@ -1,8 +1,8 @@
-# Modulith Reliability Kit
+# Handoff Semantics
 
-[![CI](https://github.com/qwertyboy0325/modulith-reliability-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/qwertyboy0325/modulith-reliability-kit/actions/workflows/ci.yml)
+[![CI](https://github.com/qwertyboy0325/handoff-semantics/actions/workflows/ci.yml/badge.svg)](https://github.com/qwertyboy0325/handoff-semantics/actions/workflows/ci.yml)
 
-A small, test-backed .NET reference for reasoning about reliable database-to-message handoffs.
+A test-backed reference for reliability semantics at the database-to-message boundary.
 
 > **Not a drop-in messaging framework or a Dapr replacement.**
 > This repository deliberately keeps the application model small so that the reliability contracts around a database-to-message handoff remain inspectable and testable: event identity, idempotent local effects, concurrent worker state transitions, retry/dead-letter behaviour, and the boundary between a local transaction and external delivery.
@@ -118,4 +118,4 @@ The code and documentation were refined with substantial AI assistance. The name
 
 ## Reuse and license
 
-The code namespace is `ModulithReliabilityKit`. Reuse is permitted under the [MIT License](LICENSE), but it is secondary to the repository’s primary purpose: an inspectable, test-backed reliability reference and case study. See [`TEMPLATE.md`](TEMPLATE.md) for rebranding support.
+The code namespace remains `ModulithReliabilityKit` for compatibility with the existing solution and commands. Reuse is permitted under the [MIT License](LICENSE), but it is secondary to the repository’s primary purpose: an inspectable, test-backed reliability reference and case study. See [`TEMPLATE.md`](TEMPLATE.md) for rebranding support.
