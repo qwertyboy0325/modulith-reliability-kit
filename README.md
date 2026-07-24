@@ -9,6 +9,8 @@ A test-backed reference for reliability semantics at the database-to-message bou
 >
 > A production system may reasonably use Dapr, a broker SDK, or another framework. Those choices do not remove the need to define and verify these application-level contracts.
 
+> **C# / .NET reviewer（繁體中文）：** [8 分鐘看懂這個專案：DDD、EF Core、MediatR 與 Event-Driven 流程](docs-tw/00-orientation/csharp-project-tour.md)
+
 ## What this repository demonstrates
 
 One producer module (`Catalog`) emits one integration event and one consumer module (`Notifications`) handles it. The narrow domain is intentional: this is a reliability reference and case study, not a system to rebuild or a generic toolkit to adopt wholesale.
